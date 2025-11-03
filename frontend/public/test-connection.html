@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Backend Connection Test</title>
+</head>
+<body>
+    <h1>Backend Bağlantı Testi</h1>
+    <button onclick="testConnection()">Test Et</button>
+    <div id="result"></div>
+
+    <script>
+        async function testConnection() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Test ediliyor...</p>';
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/health');
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <p style="color: green;">✓ Bağlantı başarılı!</p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p style="color: red;">✗ Bağlantı başarısız!</p>
+                    <p>Hata: ${error.message}</p>
+                    <p>Backend çalışıyor mu? (Port 5000)</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

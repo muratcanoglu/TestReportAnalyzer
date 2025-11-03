@@ -9,16 +9,24 @@ function UploadForm({ onUploadComplete }) {
 
     // Dosya seçme (input ile)
     const handleFileSelect = (e) => {
+        console.log("=== FILE SELECT EVENT ===");
+        console.log("Event:", e);
+        console.log("Files:", e.target.files);
+
         const file = e.target.files[0];
-        console.log("Dosya seçildi:", file);
-        
+        console.log("Selected file:", file);
+
         if (file && file.type === 'application/pdf') {
+            console.log("✓ Valid PDF file");
             setSelectedFile(file);
             setError(null);
         } else {
+            console.error("✗ Invalid file type");
             setError('Lütfen sadece PDF dosyası seçin');
             setSelectedFile(null);
         }
+
+        console.log("State updated, selectedFile:", file);
     };
 
     // Drag & Drop events
@@ -38,15 +46,19 @@ function UploadForm({ onUploadComplete }) {
         e.stopPropagation();
         setDragActive(false);
 
-        console.log("Drop event:", e.dataTransfer.files);
-        
+        console.log("=== DROP EVENT ===");
+        console.log("DataTransfer files:", e.dataTransfer.files);
+
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             const file = e.dataTransfer.files[0];
-            
+            console.log("Dropped file:", file);
+
             if (file.type === 'application/pdf') {
+                console.log("✓ Valid PDF file");
                 setSelectedFile(file);
                 setError(null);
             } else {
+                console.error("✗ Invalid file type");
                 setError('Lütfen sadece PDF dosyası yükleyin');
             }
         }
@@ -55,40 +67,59 @@ function UploadForm({ onUploadComplete }) {
     // Upload
     const handleSubmit = async (e) => {
         e.preventDefault();
-        
+
+        console.log("=== SUBMIT EVENT ===");
+        console.log("Selected file:", selectedFile);
+
         if (!selectedFile) {
+            console.error("✗ No file selected");
             setError('Lütfen önce bir PDF dosyası seçin');
             return;
         }
 
         setUploading(true);
         setError(null);
-        
-        console.log("Upload başlıyor:", selectedFile.name);
+
+        console.log("Starting upload:", selectedFile.name);
+        console.log("File size:", selectedFile.size, "bytes");
+        console.log("File type:", selectedFile.type);
 
         try {
+            console.log("Calling uploadReport API...");
             const response = await uploadReport(selectedFile);
-            console.log("Upload başarılı:", response);
-            
-            // Success
-            alert(`PDF başarıyla yüklendi ve analiz edildi!\nRapor ID: ${response.report_id}`);
-            
+            console.log("✓ Upload successful!");
+            console.log("Response:", response);
+
+            alert(`PDF başarıyla yüklendi ve analiz edildi!\n\nRapor ID: ${response.report_id}\nDosya: ${response.filename}`);
+
             // Reset
             setSelectedFile(null);
             setUploading(false);
-            
-            // Parent'a bildir
+
+            // Callback
             if (onUploadComplete) {
+                console.log("Calling onUploadComplete callback");
                 onUploadComplete(response);
             }
-            
-            // Sayfayı yenile (raporlar listesi için)
-            window.location.reload();
-            
+
+            // Reload
+            console.log("Reloading page...");
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+
         } catch (error) {
-            console.error("Upload hatası:", error);
-            setError(error.response?.data?.error || error.message || 'Yükleme başarısız oldu');
+            console.error("=== UPLOAD ERROR ===");
+            console.error("Error object:", error);
+            console.error("Error message:", error.message);
+            console.error("Response data:", error.response?.data);
+            console.error("Response status:", error.response?.status);
+
+            const errorMsg = error.response?.data?.error || error.message || 'Yükleme başarısız oldu';
+            setError(errorMsg);
             setUploading(false);
+
+            alert(`Hata: ${errorMsg}`);
         }
     };
 

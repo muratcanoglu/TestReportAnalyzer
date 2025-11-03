@@ -1487,56 +1487,57 @@ a:hover {
   margin-top: 8px;
   font-size: 0.875rem;
 }
-/* Upload Form */
+/* Upload Form - DARK THEME */
 .upload-form {
-    background: white;
+    background: #1f2937;  /* Koyu gri - tema uyumlu */
+    border: 1px solid #374151;
     border-radius: 8px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     margin-bottom: 24px;
 }
 
 .upload-form h2 {
     margin-bottom: 16px;
-    color: #1f2937;
+    color: #f9fafb;  /* Açık renk text */
     font-size: 1.25rem;
 }
 
-/* Drop Zone */
+/* Drop Zone - Dark Theme */
 .drop-zone {
-    border: 2px dashed #d1d5db;
+    border: 2px dashed #4b5563;  /* Orta gri */
     border-radius: 8px;
     padding: 48px 24px;
     text-align: center;
     transition: all 0.3s;
-    background: #f9fafb;
+    background: #111827;  /* Çok koyu gri */
     cursor: pointer;
 }
 
 .drop-zone.active {
-    border-color: #3b82f6;
-    background: #eff6ff;
+    border-color: #3b82f6;  /* Mavi */
+    background: #1e3a5f;  /* Koyu mavi ton */
 }
 
 .drop-zone.has-file {
-    border-color: #10b981;
-    background: #ecfdf5;
+    border-color: #10b981;  /* Yeşil */
+    background: #064e3b;  /* Koyu yeşil ton */
 }
 
 .drop-zone-placeholder p {
     margin: 8px 0;
-    color: #6b7280;
+    color: #9ca3af;  /* Açık gri text */
 }
 
 .or-text {
-    color: #9ca3af;
+    color: #6b7280;  /* Orta gri */
     font-size: 0.875rem;
     margin: 12px 0;
 }
 
 .file-select-btn {
     display: inline-block;
-    background: #3b82f6;
+    background: #3b82f6;  /* Mavi */
     color: white;
     padding: 10px 24px;
     border-radius: 6px;
@@ -1546,32 +1547,32 @@ a:hover {
 }
 
 .file-select-btn:hover {
-    background: #2563eb;
+    background: #2563eb;  /* Koyu mavi */
 }
 
 .hint-text {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: #6b7280;
     margin-top: 8px;
 }
 
-/* Selected File */
+/* Selected File - Dark Theme */
 .selected-file {
     padding: 16px;
 }
 
 .selected-file p {
     margin: 4px 0;
-    color: #1f2937;
+    color: #f9fafb;  /* Açık text */
 }
 
 .file-size {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #9ca3af;
 }
 
 .remove-btn {
-    background: #ef4444;
+    background: #b91c1c;
     color: white;
     border: none;
     padding: 6px 16px;
@@ -1579,16 +1580,17 @@ a:hover {
     cursor: pointer;
     margin-top: 8px;
     font-size: 0.875rem;
+    transition: background 0.2s;
 }
 
 .remove-btn:hover {
-    background: #dc2626;
+    background: #7f1d1d;
 }
 
-/* Submit Button */
+/* Submit Button - Dark Theme */
 .submit-btn {
     width: 100%;
-    background: #10b981;
+    background: #10b981;  /* Yeşil */
     color: white;
     border: none;
     padding: 12px 24px;
@@ -1601,20 +1603,21 @@ a:hover {
 }
 
 .submit-btn:hover:not(:disabled) {
-    background: #059669;
+    background: #059669;  /* Koyu yeşil */
 }
 
 .submit-btn:disabled {
-    background: #d1d5db;
+    background: #374151;  /* Koyu gri */
+    color: #6b7280;
     cursor: not-allowed;
 }
 
-/* Error Message */
+/* Error Message - Dark Theme */
 .error-message {
-    background: #fee2e2;
-    color: #991b1b;
+    background: #7f1d1d;  /* Koyu kırmızı */
+    color: #fecaca;  /* Açık kırmızı text */
     padding: 12px;
     border-radius: 6px;
     margin-top: 12px;
-    border: 1px solid #fecaca;
+    border: 1px solid #991b1b;
 }

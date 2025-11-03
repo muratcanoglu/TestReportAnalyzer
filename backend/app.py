@@ -12,7 +12,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 
 try:  # pragma: no cover - import resolution for script execution
@@ -59,12 +59,18 @@ def _resolve_debug(default: bool = True) -> bool:
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    # CORS - Development için tüm origin'lere izin ver
+    # CORS - Hem localhost hem 127.0.0.1'e izin ver
     CORS(app, resources={
         r"/api/*": {
-            "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
-            "methods": ["GET", "POST", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type"],
+            "origins": [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:3001",
+                "http://127.0.0.1:3001",
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True,
         }
     })
 
@@ -76,6 +82,13 @@ def create_app() -> Flask:
     init_db()
     app.register_blueprint(reports_bp, url_prefix="/api")
     app.register_blueprint(ai_bp)
+
+    # Health endpoint - CORS test için
+    if not any(rule.rule == "/api/health" for rule in app.url_map.iter_rules()):
+        @app.route("/api/health", methods=["GET"])
+        def health():
+            return jsonify({"status": "ok", "message": "Backend is running"})
+
     return app
 
 
