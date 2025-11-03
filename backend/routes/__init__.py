@@ -53,6 +53,16 @@ reports_bp = Blueprint("reports", __name__)
 bp = reports_bp
 
 
+@bp.route('/health', methods=['GET'])
+def health_check():
+    """Backend sağlık kontrolü"""
+    return jsonify({
+        'status': 'ok',
+        'message': 'Backend çalışıyor',
+        'timestamp': datetime.now().isoformat()
+    })
+
+
 def _json_error(message: str, status_code: int = 400):
     response = jsonify({"error": message})
     response.status_code = status_code
