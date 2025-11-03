@@ -1,192 +1,208 @@
-import React, { useState } from 'react';
-import { uploadReport } from '../api';
+import React, { useMemo, useState } from "react";
+import { analyzeReportsWithAI, uploadReport } from "../api";
+import { resolveEngineLabel } from "../utils/analysisUtils";
 
-function UploadForm({ onUploadComplete }) {
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState(null);
-    const [dragActive, setDragActive] = useState(false);
+const UploadForm = ({
+  analysisEngine = "chatgpt",
+  onUploadSuccess,
+  onAnalysisComplete,
+  isProcessing = false,
+  onProcessingStart,
+  onProcessingEnd,
+}) => {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [error, setError] = useState(null);
+  const [statusMessage, setStatusMessage] = useState(null);
+  const [analysisMessage, setAnalysisMessage] = useState(null);
+  const [localProcessing, setLocalProcessing] = useState(false);
 
-    // Dosya seçme (input ile)
-    const handleFileSelect = (e) => {
-        console.log("=== FILE SELECT EVENT ===");
-        console.log("Event:", e);
-        console.log("Files:", e.target.files);
+  const engineLabel = useMemo(
+    () => resolveEngineLabel(analysisEngine),
+    [analysisEngine]
+  );
 
-        const file = e.target.files[0];
-        console.log("Selected file:", file);
+  const isBusy = isProcessing || localProcessing;
 
-        if (file && file.type === 'application/pdf') {
-            console.log("✓ Valid PDF file");
-            setSelectedFile(file);
-            setError(null);
-        } else {
-            console.error("✗ Invalid file type");
-            setError('Lütfen sadece PDF dosyası seçin');
-            setSelectedFile(null);
-        }
+  const resetMessages = () => {
+    setError(null);
+    setStatusMessage(null);
+    setAnalysisMessage(null);
+  };
 
-        console.log("State updated, selectedFile:", file);
-    };
+  const handleFileSelect = (event) => {
+    const file = event.target.files?.[0] ?? null;
+    resetMessages();
 
-    // Drag & Drop events
-    const handleDrag = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        if (e.type === 'dragenter' || e.type === 'dragover') {
-            setDragActive(true);
-        } else if (e.type === 'dragleave') {
-            setDragActive(false);
-        }
-    };
+    if (file && file.type === "application/pdf") {
+      setSelectedFile(file);
+    } else {
+      setError("Lütfen sadece PDF dosyası seçin");
+      setSelectedFile(null);
+    }
+  };
 
-    const handleDrop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
+  const handleDrag = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
 
-        console.log("=== DROP EVENT ===");
-        console.log("DataTransfer files:", e.dataTransfer.files);
+    if (event.type === "dragenter" || event.type === "dragover") {
+      setDragActive(true);
+    } else if (event.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
 
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            const file = e.dataTransfer.files[0];
-            console.log("Dropped file:", file);
+  const handleDrop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    resetMessages();
 
-            if (file.type === 'application/pdf') {
-                console.log("✓ Valid PDF file");
-                setSelectedFile(file);
-                setError(null);
-            } else {
-                console.error("✗ Invalid file type");
-                setError('Lütfen sadece PDF dosyası yükleyin');
-            }
-        }
-    };
+    const file = event.dataTransfer?.files?.[0] ?? null;
+    if (!file) {
+      return;
+    }
 
-    // Upload
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    if (file.type === "application/pdf") {
+      setSelectedFile(file);
+    } else {
+      setError("Lütfen sadece PDF dosyası yükleyin");
+    }
+  };
 
-        console.log("=== SUBMIT EVENT ===");
-        console.log("Selected file:", selectedFile);
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-        if (!selectedFile) {
-            console.error("✗ No file selected");
-            setError('Lütfen önce bir PDF dosyası seçin');
-            return;
-        }
+    if (!selectedFile) {
+      setError("Lütfen önce bir PDF dosyası seçin");
+      return;
+    }
 
-        setUploading(true);
-        setError(null);
+    if (isBusy) {
+      return;
+    }
 
-        console.log("Starting upload:", selectedFile.name);
-        console.log("File size:", selectedFile.size, "bytes");
-        console.log("File type:", selectedFile.type);
+    resetMessages();
+    setLocalProcessing(true);
+    onProcessingStart?.();
 
-        try {
-            console.log("Calling uploadReport API...");
-            const response = await uploadReport(selectedFile);
-            console.log("✓ Upload successful!");
-            console.log("Response:", response);
+    try {
+      const uploadResponse = await uploadReport(selectedFile, analysisEngine);
+      setStatusMessage(
+        `${selectedFile.name} başarıyla yüklendi. ${engineLabel} ile analiz başlatılıyor.`
+      );
+      onUploadSuccess?.(uploadResponse);
 
-            alert(`PDF başarıyla yüklendi ve analiz edildi!\n\nRapor ID: ${response.report_id}\nDosya: ${response.filename}`);
+      try {
+        const analysisResult = await analyzeReportsWithAI(
+          [selectedFile],
+          analysisEngine
+        );
+        const message =
+          analysisResult?.message ||
+          `${engineLabel} analizi başarıyla tamamlandı.`;
+        setAnalysisMessage(message);
+        onAnalysisComplete?.(analysisResult, {
+          engineKey: analysisEngine,
+          source: "home",
+        });
+        setSelectedFile(null);
+      } catch (analysisError) {
+        const message =
+          analysisError?.response?.data?.error ||
+          analysisError?.message ||
+          "AI analizi sırasında bir sorun oluştu. Lütfen tekrar deneyin.";
+        setError(message);
+      }
+    } catch (uploadError) {
+      const message =
+        uploadError?.response?.data?.error ||
+        uploadError?.message ||
+        "Yükleme işlemi başarısız oldu. Lütfen tekrar deneyin.";
+      setError(message);
+    } finally {
+      setLocalProcessing(false);
+      onProcessingEnd?.();
+    }
+  };
 
-            // Reset
-            setSelectedFile(null);
-            setUploading(false);
+  const busyLabel = isBusy
+    ? `${engineLabel} Analizi Yapılıyor...`
+    : "PDF Yükle ve AI ile Analiz Et";
 
-            // Callback
-            if (onUploadComplete) {
-                console.log("Calling onUploadComplete callback");
-                onUploadComplete(response);
-            }
+  return (
+    <div className="upload-form">
+      <h2>PDF Test Raporunu Yükle ve Analiz Et</h2>
 
-            // Reload
-            console.log("Reloading page...");
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-
-        } catch (error) {
-            console.error("=== UPLOAD ERROR ===");
-            console.error("Error object:", error);
-            console.error("Error message:", error.message);
-            console.error("Response data:", error.response?.data);
-            console.error("Response status:", error.response?.status);
-
-            const errorMsg = error.response?.data?.error || error.message || 'Yükleme başarısız oldu';
-            setError(errorMsg);
-            setUploading(false);
-
-            alert(`Hata: ${errorMsg}`);
-        }
-    };
-
-    return (
-        <div className="upload-form">
-            <h2>PDF Test Raporunu Yükle ve Analiz Et</h2>
-            
-            <form onSubmit={handleSubmit}>
-                {/* Drag & Drop Area */}
-                <div 
-                    className={`drop-zone ${dragActive ? 'active' : ''} ${selectedFile ? 'has-file' : ''}`}
-                    onDragEnter={handleDrag}
-                    onDragOver={handleDrag}
-                    onDragLeave={handleDrag}
-                    onDrop={handleDrop}
-                >
-                    {selectedFile ? (
-                        <div className="selected-file">
-                            <p>📄 {selectedFile.name}</p>
-                            <p className="file-size">
-                                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                            <button 
-                                type="button" 
-                                onClick={() => setSelectedFile(null)}
-                                className="remove-btn"
-                            >
-                                ✕ Kaldır
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="drop-zone-placeholder">
-                            <p>📂 PDF Test Raporlarını Sürükleyip Bırakabilirsiniz</p>
-                            <p className="or-text">veya</p>
-                            <label htmlFor="file-input" className="file-select-btn">
-                                Dosya Seç
-                            </label>
-                            <input
-                                id="file-input"
-                                type="file"
-                                accept=".pdf,application/pdf"
-                                onChange={handleFileSelect}
-                                style={{ display: 'none' }}
-                            />
-                            <p className="hint-text">Sadece PDF formatı desteklenir</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Error Message */}
-                {error && (
-                    <div className="error-message">
-                        ⚠️ {error}
-                    </div>
-                )}
-
-                {/* Submit Button */}
-                <button 
-                    type="submit" 
-                    disabled={!selectedFile || uploading}
-                    className="submit-btn"
-                >
-                    {uploading ? 'Yükleniyor ve Analiz Ediliyor...' : 'PDF Yükle ve AI ile Analiz Et'}
-                </button>
-            </form>
+      <form onSubmit={handleSubmit}>
+        <div
+          className={`drop-zone ${dragActive ? "active" : ""} ${
+            selectedFile ? "has-file" : ""
+          }`}
+          onDragEnter={handleDrag}
+          onDragOver={handleDrag}
+          onDragLeave={handleDrag}
+          onDrop={handleDrop}
+        >
+          {selectedFile ? (
+            <div className="selected-file">
+              <p>📄 {selectedFile.name}</p>
+              <p className="file-size">
+                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedFile(null)}
+                className="remove-btn"
+                disabled={isBusy}
+              >
+                ✕ Kaldır
+              </button>
+            </div>
+          ) : (
+            <div className="drop-zone-placeholder">
+              <p>📂 PDF Test Raporlarını Sürükleyip Bırakabilirsiniz</p>
+              <p className="or-text">veya</p>
+              <label htmlFor="file-input" className="file-select-btn">
+                Dosya Seç
+              </label>
+              <input
+                id="file-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handleFileSelect}
+                disabled={isBusy}
+                style={{ display: "none" }}
+              />
+              <p className="hint-text">Sadece PDF formatı desteklenir</p>
+            </div>
+          )}
         </div>
-    );
-}
+
+        {statusMessage && (
+          <div className="alert alert-success" role="status">
+            {statusMessage}
+          </div>
+        )}
+
+        {analysisMessage && (
+          <div className="alert alert-info" role="status">
+            {analysisMessage}
+          </div>
+        )}
+
+        {error && <div className="error-message">⚠️ {error}</div>}
+
+        <button type="submit" disabled={!selectedFile || isBusy} className="submit-btn">
+          {busyLabel}
+        </button>
+        <p className="muted-text">
+          Seçilen analiz motoru: <strong>{engineLabel}</strong>
+        </p>
+      </form>
+    </div>
+  );
+};
 
 export default UploadForm;
