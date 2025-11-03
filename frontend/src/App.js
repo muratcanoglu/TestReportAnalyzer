@@ -247,6 +247,8 @@ const App = () => {
                   reports={reports}
                   analysisEngine={analysisEngine}
                   analysisArchive={archivedAnalyses}
+                  onRefresh={fetchReports}
+                  onAnalysisComplete={handleAnalysisComplete}
                 />
               }
             />

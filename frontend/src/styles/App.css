@@ -1587,6 +1587,117 @@ a:hover {
     background: #7f1d1d;
 }
 
+.archive-actions-grid {
+  align-items: flex-start;
+}
+
+.multi-upload-drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background-color: rgba(148, 163, 184, 0.08);
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.multi-upload-drop-zone.active {
+  border-color: var(--primary-color);
+  background-color: rgba(37, 99, 235, 0.12);
+}
+
+.multi-upload-drop-zone.has-files {
+  border-color: var(--success-color);
+  background-color: rgba(22, 163, 74, 0.08);
+}
+
+.multi-upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--muted-color);
+}
+
+.multi-upload-file-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.multi-upload-file-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.multi-upload-file-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem;
+  background-color: rgba(148, 163, 184, 0.12);
+}
+
+.multi-upload-file-list .file-name {
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.multi-upload-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.multi-upload-card .alert {
+  margin-top: 1.25rem;
+}
+
+.report-archive-card .table-wrapper {
+  margin-top: 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.archive-table th,
+.archive-table td {
+  white-space: nowrap;
+}
+
+.archive-table td:first-child {
+  max-width: 240px;
+  white-space: normal;
+}
+
+.analyze-button {
+  font-size: 0.9rem;
+  padding: 0.5rem 0.85rem;
+}
+
+@media (max-width: 768px) {
+  .report-archive-card .table-wrapper {
+    max-height: none;
+  }
+
+  .archive-table th,
+  .archive-table td {
+    white-space: normal;
+  }
+}
+
 /* Submit Button - Dark Theme */
 .submit-btn {
     width: 100%;

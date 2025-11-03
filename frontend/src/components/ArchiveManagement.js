@@ -1,4 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
+import {
+  analyzeReportsWithAI,
+  downloadReportFile,
+  uploadReport,
+} from "../api";
+import { resolveEngineLabel } from "../utils/analysisUtils";
 import { detectReportType, getReportStatusLabel } from "../utils/reportUtils";
 import AnalysisSummaryCard from "./AnalysisSummaryCard";
 
@@ -40,7 +46,33 @@ const deriveStatusFilterValue = (statusLabel = "") => {
   return "Belirsiz";
 };
 
-const ArchiveManagement = ({ reports, analysisEngine = "chatgpt", analysisArchive = [] }) => {
+const MAX_MULTI_UPLOAD_FILES = 100;
+
+const createFileLike = (blob, filename) => {
+  const mimeType = blob?.type || "application/pdf";
+  if (typeof File === "function") {
+    return new File([blob], filename, { type: mimeType });
+  }
+
+  const fallback = new Blob([blob], { type: mimeType });
+  try {
+    Object.defineProperty(fallback, "name", {
+      value: filename,
+      configurable: true,
+    });
+  } catch (error) {
+    // Ignore when defineProperty is not supported.
+  }
+  return fallback;
+};
+
+const ArchiveManagement = ({
+  reports,
+  analysisEngine = "chatgpt",
+  analysisArchive = [],
+  onRefresh,
+  onAnalysisComplete,
+}) => {
   const [filters, setFilters] = useState({
     startDate: "",
     endDate: "",
@@ -52,6 +84,13 @@ const ArchiveManagement = ({ reports, analysisEngine = "chatgpt", analysisArchiv
   const [filteredReports, setFilteredReports] = useState([]);
   const [filtersApplied, setFiltersApplied] = useState(false);
   const [isArchiveCollapsed, setIsArchiveCollapsed] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
+  const [multiUploadStatus, setMultiUploadStatus] = useState(null);
+  const [isMultiUploading, setIsMultiUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0 });
+  const [analysisFeedback, setAnalysisFeedback] = useState(null);
+  const [activeAnalysisId, setActiveAnalysisId] = useState(null);
 
   const enrichedReports = useMemo(
     () =>
@@ -99,11 +138,13 @@ const ArchiveManagement = ({ reports, analysisEngine = "chatgpt", analysisArchiv
     return summary;
   }, [reportsWithStatus]);
 
-  const recentReports = useMemo(() => {
-    return [...reportsWithStatus]
-      .sort((a, b) => (b.uploadDate?.getTime() ?? 0) - (a.uploadDate?.getTime() ?? 0))
-      .slice(0, 10);
+  const sortedReports = useMemo(() => {
+    return [...reportsWithStatus].sort(
+      (a, b) => (b.uploadDate?.getTime() ?? 0) - (a.uploadDate?.getTime() ?? 0)
+    );
   }, [reportsWithStatus]);
+
+  const engineLabel = useMemo(() => resolveEngineLabel(analysisEngine), [analysisEngine]);
 
   const matchesDateRange = (report) => {
     if (!report.uploadDate) {
@@ -175,6 +216,192 @@ const ArchiveManagement = ({ reports, analysisEngine = "chatgpt", analysisArchiv
     setFilteredReports([]);
     setFiltersApplied(false);
   };
+
+  const handleFilesAdded = useCallback(
+    (fileList) => {
+      const incomingFiles = Array.from(fileList ?? []);
+      if (incomingFiles.length === 0) {
+        return;
+      }
+
+      const pdfFiles = incomingFiles.filter(
+        (file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+      );
+
+      if (pdfFiles.length === 0) {
+        setMultiUploadStatus({ type: "error", message: "Lütfen sadece PDF dosyaları seçin." });
+        return;
+      }
+
+      setSelectedFiles((previous) => {
+        const availableSlots = MAX_MULTI_UPLOAD_FILES - previous.length;
+        if (availableSlots <= 0) {
+          setMultiUploadStatus({
+            type: "warning",
+            message: `En fazla ${MAX_MULTI_UPLOAD_FILES} adet PDF yükleyebilirsiniz.`,
+          });
+          return previous;
+        }
+
+        const acceptedFiles = pdfFiles.slice(0, availableSlots);
+        if (acceptedFiles.length < pdfFiles.length) {
+          setMultiUploadStatus({
+            type: "warning",
+            message: `En fazla ${MAX_MULTI_UPLOAD_FILES} adet PDF yükleyebilirsiniz.`,
+          });
+        } else {
+          setMultiUploadStatus(null);
+        }
+
+        return [...previous, ...acceptedFiles];
+      });
+    },
+    []
+  );
+
+  const handleFileInputChange = useCallback(
+    (event) => {
+      handleFilesAdded(event.target.files);
+      event.target.value = "";
+    },
+    [handleFilesAdded]
+  );
+
+  const handleDrag = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.type === "dragenter" || event.type === "dragover") {
+      setDragActive(true);
+    } else if (event.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setDragActive(false);
+      handleFilesAdded(event.dataTransfer?.files);
+    },
+    [handleFilesAdded]
+  );
+
+  const handleRemoveFile = useCallback((index) => {
+    setSelectedFiles((previous) => previous.filter((_, idx) => idx !== index));
+  }, []);
+
+  const handleClearSelectedFiles = useCallback(() => {
+    setSelectedFiles([]);
+    setMultiUploadStatus(null);
+  }, []);
+
+  const handleBulkUpload = useCallback(async () => {
+    if (selectedFiles.length === 0) {
+      setMultiUploadStatus({ type: "error", message: "Lütfen en az bir PDF dosyası seçin." });
+      return;
+    }
+
+    setIsMultiUploading(true);
+    setUploadProgress({ processed: 0, total: selectedFiles.length });
+    setMultiUploadStatus({
+      type: "info",
+      message: `${selectedFiles.length} rapor yükleniyor...`,
+    });
+
+    let successCount = 0;
+    let failureCount = 0;
+    let firstErrorMessage = "";
+
+    for (let index = 0; index < selectedFiles.length; index += 1) {
+      const file = selectedFiles[index];
+      try {
+        await uploadReport(file, analysisEngine);
+        successCount += 1;
+      } catch (error) {
+        failureCount += 1;
+        if (!firstErrorMessage) {
+          firstErrorMessage =
+            error?.response?.data?.error ||
+            error?.message ||
+            "Yükleme sırasında bir hata oluştu. Lütfen tekrar deneyin.";
+        }
+      } finally {
+        setUploadProgress({ processed: index + 1, total: selectedFiles.length });
+      }
+    }
+
+    setIsMultiUploading(false);
+    setSelectedFiles([]);
+    setUploadProgress({ processed: 0, total: 0 });
+
+    if (failureCount > 0 && successCount > 0) {
+      setMultiUploadStatus({
+        type: "warning",
+        message: `${successCount} rapor yüklendi, ${failureCount} rapor yüklenemedi. İlk hata: ${firstErrorMessage}`,
+      });
+    } else if (failureCount > 0) {
+      setMultiUploadStatus({
+        type: "error",
+        message: `Raporlar yüklenemedi. İlk hata: ${firstErrorMessage}`,
+      });
+    } else {
+      setMultiUploadStatus({
+        type: "success",
+        message: `${successCount} rapor başarıyla yüklendi.`,
+      });
+    }
+
+    if (successCount > 0 && typeof onRefresh === "function") {
+      try {
+        await onRefresh();
+      } catch (error) {
+        setMultiUploadStatus({
+          type: "warning",
+          message: "Rapor listesi güncellenemedi, lütfen sayfayı yenileyin.",
+        });
+      }
+    }
+  }, [analysisEngine, onRefresh, selectedFiles]);
+
+  const handleAnalyzeReport = useCallback(
+    async (report) => {
+      if (!report?.id || activeAnalysisId) {
+        return;
+      }
+
+      setActiveAnalysisId(report.id);
+      setAnalysisFeedback({
+        type: "info",
+        message: `${report.filename} ${engineLabel} ile analiz ediliyor...`,
+      });
+
+      try {
+        const blob = await downloadReportFile(report.id);
+        const filename = report.filename || `report-${report.id}.pdf`;
+        const fileForAnalysis = createFileLike(blob, filename);
+        const result = await analyzeReportsWithAI([fileForAnalysis], analysisEngine);
+
+        setAnalysisFeedback({
+          type: "success",
+          message:
+            result?.message || `${report.filename} ${engineLabel} analizi tamamlandı.`,
+        });
+
+        onAnalysisComplete?.(result, { source: "archive", engineKey: analysisEngine });
+      } catch (error) {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          "AI analizi sırasında bir hata oluştu. Lütfen tekrar deneyin.";
+        setAnalysisFeedback({ type: "error", message });
+      } finally {
+        setActiveAnalysisId(null);
+      }
+    },
+    [activeAnalysisId, analysisEngine, engineLabel, onAnalysisComplete]
+  );
 
   const hasFilters = Object.values(filters).some(Boolean);
 
@@ -314,7 +541,11 @@ const ArchiveManagement = ({ reports, analysisEngine = "chatgpt", analysisArchiv
                   <tr key={report.id}>
                     <td>{report.filename}</td>
                     <td>{report.uploadDate ? report.uploadDate.toLocaleDateString() : "-"}</td>
-                    <td>{report.uploadDate ? report.uploadDate.toLocaleTimeString() : "-"}</td>
+                    <td>
+                      {report.uploadDate
+                        ? report.uploadDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                        : "-"}
+                    </td>
                     <td>{report.detectedType}</td>
                     <td>{report.laboratory}</td>
                     <td>{report.statusLabel}</td>
@@ -326,31 +557,147 @@ const ArchiveManagement = ({ reports, analysisEngine = "chatgpt", analysisArchiv
         </div>
       )}
 
-      <div className="card recent-reports-card">
-        <h2>Son Yüklenen Raporlar</h2>
-        {recentReports.length === 0 ? (
-          <p className="muted-text">Henüz rapor yüklenmedi.</p>
-        ) : (
-          <table className="table recent-reports-table">
-            <thead>
-              <tr>
-                <th>Yüklenen Rapor</th>
-                <th>Yükleme Tarihi</th>
-                <th>Yükleme Saati</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentReports.map((report) => (
-                <tr key={report.id}>
-                  <td>{report.filename}</td>
-                  <td>{report.uploadDate ? report.uploadDate.toLocaleDateString() : "-"}</td>
-                  <td>{report.uploadDate ? report.uploadDate.toLocaleTimeString() : "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      <div className="two-column-grid archive-actions-grid">
+        <div className="card multi-upload-card">
+          <h2>Çoklu PDF Test Raporu Yükleme</h2>
+          <p className="muted-text">Max. 100 adet pdf test raporu yükleyebilirsiniz!</p>
+
+          <div
+            className={`multi-upload-drop-zone ${dragActive ? "active" : ""} ${
+              selectedFiles.length ? "has-files" : ""
+            }`}
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+          >
+            {selectedFiles.length > 0 ? (
+              <div className="multi-upload-file-list">
+                <ul>
+                  {selectedFiles.map((file, index) => (
+                    <li key={`${file.name}-${index}`}>
+                      <span className="file-name">📄 {file.name}</span>
+                      <button
+                        type="button"
+                        className="remove-btn"
+                        onClick={() => handleRemoveFile(index)}
+                        disabled={isMultiUploading}
+                      >
+                        Kaldır
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="multi-upload-placeholder">
+                <p>📂 PDF test raporlarını buraya sürükleyip bırakabilirsiniz</p>
+                <p className="or-text">veya</p>
+                <label htmlFor="multi-upload-input" className="file-select-btn">
+                  Dosya Seç
+                </label>
+                <input
+                  id="multi-upload-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  multiple
+                  onChange={handleFileInputChange}
+                  disabled={isMultiUploading}
+                  style={{ display: "none" }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="multi-upload-actions">
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={handleBulkUpload}
+              disabled={isMultiUploading || selectedFiles.length === 0}
+            >
+              {isMultiUploading
+                ? `Yükleniyor (${uploadProgress.processed}/${uploadProgress.total})`
+                : "Seçilen Raporları Yükle"}
+            </button>
+            <button
+              type="button"
+              className="button button-ghost"
+              onClick={handleClearSelectedFiles}
+              disabled={isMultiUploading || selectedFiles.length === 0}
+            >
+              Seçilenleri Temizle
+            </button>
+          </div>
+
+          {multiUploadStatus && (
+            <div className={`alert alert-${multiUploadStatus.type}`} role="status">
+              {multiUploadStatus.message}
+            </div>
+          )}
+        </div>
+
+        <div className="card report-archive-card">
+          <h2>Rapor Arşivi</h2>
+          {sortedReports.length === 0 ? (
+            <p className="muted-text">Henüz rapor yüklenmedi.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table className="table archive-table">
+                <thead>
+                  <tr>
+                    <th>Raporun Adı</th>
+                    <th>Yüklenme Tarihi</th>
+                    <th>Yüklenme Saati</th>
+                    <th>Test Tipi</th>
+                    <th>Laboratuvar</th>
+                    <th>Model</th>
+                    <th>İşlem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedReports.map((report) => (
+                    <tr key={report.id}>
+                      <td>{report.filename}</td>
+                      <td>{report.uploadDate ? report.uploadDate.toLocaleDateString() : "-"}</td>
+                      <td>
+                        {report.uploadDate
+                          ? report.uploadDate.toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "-"}
+                      </td>
+                      <td>{report.detectedType || "Bilinmeyen"}</td>
+                      <td>{report.laboratory}</td>
+                      <td>{report.model}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="button button-secondary analyze-button"
+                          onClick={() => handleAnalyzeReport(report)}
+                          disabled={activeAnalysisId === report.id}
+                        >
+                          {activeAnalysisId === report.id
+                            ? "Analiz Ediliyor..."
+                            : "AI ile Analiz Et"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {analysisFeedback && (
+            <div className={`alert alert-${analysisFeedback.type}`} role="status">
+              {analysisFeedback.message}
+            </div>
+          )}
+        </div>
       </div>
+
       <AnalysisSummaryCard
         analyses={analysisArchive}
         title="Analiz Arşivi"
