@@ -59,7 +59,14 @@ def _resolve_debug(default: bool = True) -> bool:
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    CORS(app)
+    # CORS - Development için tüm origin'lere izin ver
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+            "methods": ["GET", "POST", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type"],
+        }
+    })
 
     base_dir = Path(__file__).resolve().parent
     upload_dir = base_dir / "uploads"
