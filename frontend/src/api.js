@@ -1,45 +1,32 @@
 import axios from "axios";
 
-const API_BASE = window.location.hostname === "localhost"
-  ? "http://localhost:5000/api"
-  : "http://127.0.0.1:5000/api";
+const API_BASE =
+  window.location.hostname === "localhost"
+    ? "http://localhost:5000/api"
+    : "http://127.0.0.1:5000/api";
 
 const client = axios.create({
   baseURL: API_BASE,
 });
 
-export const uploadReport = async (file) => {
-  console.log('=== UPLOAD API CALL ===');
-  console.log('File:', file);
-  console.log('File name:', file.name);
-  console.log('File size:', file.size);
-  console.log('File type:', file.type);
-
-  // FormData oluştur
+export const uploadReport = async (file, engine) => {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append("file", file);
 
-  console.log('FormData oluşturuldu');
+  if (engine) {
+    formData.append("engine", engine);
+  }
 
   try {
-    console.log('Request gönderiliyor: POST /api/upload');
-
     const response = await axios.post(`${API_BASE}/upload`, formData, {
       headers: {
-        'Content-Type': 'multipart/form-data'
+        "Content-Type": "multipart/form-data",
       },
-      timeout: 120000  // 2 dakika timeout (AI analizi uzun sürebilir)
+      timeout: 120000,
     });
 
-    console.log('Response alındı:', response.data);
     return response.data;
-
   } catch (error) {
-    console.error('=== UPLOAD ERROR ===');
-    console.error('Error:', error);
-    console.error('Response:', error.response?.data);
-    console.error('Status:', error.response?.status);
-
     throw error;
   }
 };

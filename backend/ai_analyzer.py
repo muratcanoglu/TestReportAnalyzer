@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import textwrap
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -120,16 +121,25 @@ class AIAnalyzer:
         self.openai_client = None
         self._claude_client_key = None
         self._openai_client_key = None
+        self._forced_provider: Optional[str] = None
         self._translation_cache: Dict[
             Tuple[str, str, Tuple[str, ...]], Dict[str, str]
         ] = {}
         self._refresh_configuration()
 
+    @staticmethod
+    def _normalise_provider_value(provider: Optional[str]) -> str:
+        value = (provider or "none").strip().lower()
+        if value not in {"claude", "chatgpt", "both", "none"}:
+            return "none"
+        return value
+
     def _refresh_configuration(self) -> None:
         """Ortam değişkenlerini okuyup gerekli istemcileri güncelle."""
-        provider_value = (os.getenv("AI_PROVIDER", self.provider) or "none").strip().lower()
-        if provider_value not in {"claude", "chatgpt", "both", "none"}:
-            provider_value = "none"
+        env_provider = os.getenv("AI_PROVIDER", self.provider) or "none"
+        provider_value = self._normalise_provider_value(env_provider)
+        if self._forced_provider is not None:
+            provider_value = self._normalise_provider_value(self._forced_provider)
         self.provider = provider_value
         self.anthropic_key = (os.getenv("ANTHROPIC_API_KEY", "") or "").strip()
         self.openai_key = (os.getenv("OPENAI_API_KEY", "") or "").strip()
@@ -386,6 +396,19 @@ class AIAnalyzer:
                 continue
 
         return None
+
+    @contextmanager
+    def temporary_provider(self, provider: Optional[str]):
+        """Context manager to temporarily override the active AI provider."""
+
+        previous = self._forced_provider
+        try:
+            self._forced_provider = provider
+            self._refresh_configuration()
+            yield
+        finally:
+            self._forced_provider = previous
+            self._refresh_configuration()
 
     def _prepare_report_excerpt(self, text: str, limit: int = 12000) -> str:
         """PDF metninden özet çıkar ve uzunluğu sınırla."""

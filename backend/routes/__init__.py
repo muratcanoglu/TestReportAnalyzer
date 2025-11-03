@@ -114,6 +114,18 @@ SUMMARY_LABELS = {
     },
 }
 
+ENGINE_LABELS = {
+    "chatgpt": "ChatGPT",
+    "claude": "Claude",
+}
+
+
+def _normalise_engine(engine: str | None) -> tuple[str, str]:
+    key = (engine or "chatgpt").strip().lower()
+    if key not in ENGINE_LABELS:
+        key = "chatgpt"
+    return key, ENGINE_LABELS[key]
+
 LANGUAGE_TEMPLATES = {
     "tr": {
         "summary": (
@@ -942,6 +954,8 @@ def upload_report():
         logger.error(f"Invalid file type: {file.filename}")
         return jsonify({'error': 'Sadece PDF dosyaları desteklenir'}), 400
 
+    engine_key, engine_label = _normalise_engine(request.form.get("engine"))
+
     try:
         # Dosyayı kaydet
         filename = secure_filename(file.filename)
@@ -962,7 +976,8 @@ def upload_report():
 
         # Analiz başlat
         logger.info("PDF analizi başlatılıyor...")
-        analysis_result = analyze_pdf_comprehensive(pdf_path)
+        with ai_analyzer.temporary_provider(engine_key):
+            analysis_result = analyze_pdf_comprehensive(pdf_path)
 
         logger.info("Analiz tamamlandı, database'e kaydediliyor...")
 
@@ -1005,6 +1020,8 @@ def upload_report():
             'report_id': report_id,
             'filename': filename,
             'basic_stats': analysis_result['basic_stats'],
+            'analysis_engine': engine_label,
+            'analysis_engine_key': engine_key,
             'message': 'PDF başarıyla yüklendi ve analiz edildi'
         }), 200
 
@@ -1384,138 +1401,139 @@ def analyze_files_with_ai():
     if not files:
         return _json_error("Analiz için en az bir PDF dosyası gönderin.", 400)
 
-    engine = (request.form.get("engine") or "chatgpt").strip().lower()
-    engine_label = "Claude" if engine == "claude" else "ChatGPT"
+    engine_key, engine_label = _normalise_engine(request.form.get("engine"))
 
     summaries = []
     processed_files = 0
 
-    for storage in files:
-        if not storage or storage.filename == "":
-            continue
+    with ai_analyzer.temporary_provider(engine_key):
+        for storage in files:
+            if not storage or storage.filename == "":
+                continue
 
-        filename = storage.filename
-        if not filename.lower().endswith(".pdf"):
-            continue
+            filename = storage.filename
+            if not filename.lower().endswith(".pdf"):
+                continue
 
-        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            storage.save(temp_file.name)
-            temp_path = Path(temp_file.name)
+            with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                storage.save(temp_file.name)
+                temp_path = Path(temp_file.name)
 
-        try:
-            extraction = extract_text_from_pdf(temp_path)
-            raw_text = (
-                extraction.get("structured_text")
-                if isinstance(extraction, dict)
-                else ""
-            ) or (
-                extraction.get("text")
-                if isinstance(extraction, dict)
-                else str(extraction)
+            try:
+                extraction = extract_text_from_pdf(temp_path)
+                raw_text = (
+                    extraction.get("structured_text")
+                    if isinstance(extraction, dict)
+                    else ""
+                ) or (
+                    extraction.get("text")
+                    if isinstance(extraction, dict)
+                    else str(extraction)
+                )
+                raw_text = str(raw_text or "")
+                parsed_results = parse_test_results(extraction)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                temp_path.unlink(missing_ok=True)
+                return _json_error(f"PDF analizi başarısız oldu: {exc}", 500)
+            finally:
+                temp_path.unlink(missing_ok=True)
+
+            report_type_key, report_type_label = infer_report_type(raw_text, filename)
+            processed_files += 1
+            total_tests = len(parsed_results)
+            passed_tests = sum(1 for result in parsed_results if result.get("status") == "PASS")
+            failed_tests = total_tests - passed_tests
+            alignment_key = _derive_alignment_key(total_tests, passed_tests, failed_tests)
+            success_rate = (passed_tests / total_tests * 100.0) if total_tests else 0.0
+            success_rate = round(success_rate, 2)
+
+            failure_details = [
+                {
+                    "test_name": result.get("test_name", "Bilinmeyen Test"),
+                    "failure_reason": result.get("failure_reason", ""),
+                    "suggested_fix": result.get("suggested_fix", ""),
+                }
+                for result in parsed_results
+                if result.get("status") == "FAIL"
+            ]
+
+            fallback_localized = _build_multilingual_summary(
+                engine_label,
+                filename,
+                report_type_label,
+                total_tests,
+                passed_tests,
+                failed_tests,
+                failure_details,
             )
-            raw_text = str(raw_text or "")
-            parsed_results = parse_test_results(extraction)
-        except Exception as exc:  # pragma: no cover - defensive logging
-            temp_path.unlink(missing_ok=True)
-            return _json_error(f"PDF analizi başarısız oldu: {exc}", 500)
-        finally:
-            temp_path.unlink(missing_ok=True)
 
-        report_type_key, report_type_label = infer_report_type(raw_text, filename)
-        processed_files += 1
-        total_tests = len(parsed_results)
-        passed_tests = sum(1 for result in parsed_results if result.get("status") == "PASS")
-        failed_tests = total_tests - passed_tests
-        alignment_key = _derive_alignment_key(total_tests, passed_tests, failed_tests)
-        success_rate = (passed_tests / total_tests * 100.0) if total_tests else 0.0
-        success_rate = round(success_rate, 2)
+            ai_summary_payload = ai_analyzer.generate_report_summary(
+                filename=filename,
+                report_type=report_type_label,
+                total_tests=total_tests,
+                passed_tests=passed_tests,
+                failed_tests=failed_tests,
+                raw_text=raw_text,
+                failure_details=failure_details,
+            )
 
-        failure_details = [
-            {
-                "test_name": result.get("test_name", "Bilinmeyen Test"),
-                "failure_reason": result.get("failure_reason", ""),
-                "suggested_fix": result.get("suggested_fix", ""),
-            }
-            for result in parsed_results
-            if result.get("status") == "FAIL"
-        ]
+            localized_summaries = _merge_localized_summaries(
+                fallback_localized,
+                (ai_summary_payload or {}).get("localized_summaries") if ai_summary_payload else None,
+                translator=ai_analyzer,
+            )
 
-        fallback_localized = _build_multilingual_summary(
-            engine_label,
-            filename,
-            report_type_label,
-            total_tests,
-            passed_tests,
-            failed_tests,
-            failure_details,
-        )
+            fallback_sections = _build_structured_sections_from_text(
+                raw_text,
+                total_tests,
+                passed_tests,
+                failed_tests,
+                failure_details,
+                report_type_label,
+            )
+            structured_sections = _merge_structured_sections(
+                fallback_sections,
+                (ai_summary_payload or {}).get("sections") if ai_summary_payload else None,
+                translator=ai_analyzer,
+            )
 
-        ai_summary_payload = ai_analyzer.generate_report_summary(
-            filename=filename,
-            report_type=report_type_label,
-            total_tests=total_tests,
-            passed_tests=passed_tests,
-            failed_tests=failed_tests,
-            raw_text=raw_text,
-            failure_details=failure_details,
-        )
+            fallback_highlights = _build_highlights_from_data(
+                total_tests,
+                passed_tests,
+                failed_tests,
+                failure_details,
+                report_type_label,
+            )
+            analysis_highlights = _merge_highlights(
+                fallback_highlights,
+                (ai_summary_payload or {}).get("highlights") if ai_summary_payload else None,
+            )
 
-        localized_summaries = _merge_localized_summaries(
-            fallback_localized,
-            (ai_summary_payload or {}).get("localized_summaries") if ai_summary_payload else None,
-            translator=ai_analyzer,
-        )
+            base_summary = localized_summaries["tr"]["summary"]
+            conditions_text = localized_summaries["tr"].get("conditions", "")
+            improvements_text = localized_summaries["tr"].get("improvements", "")
 
-        fallback_sections = _build_structured_sections_from_text(
-            raw_text,
-            total_tests,
-            passed_tests,
-            failed_tests,
-            failure_details,
-            report_type_label,
-        )
-        structured_sections = _merge_structured_sections(
-            fallback_sections,
-            (ai_summary_payload or {}).get("sections") if ai_summary_payload else None,
-            translator=ai_analyzer,
-        )
-
-        fallback_highlights = _build_highlights_from_data(
-            total_tests,
-            passed_tests,
-            failed_tests,
-            failure_details,
-            report_type_label,
-        )
-        analysis_highlights = _merge_highlights(
-            fallback_highlights,
-            (ai_summary_payload or {}).get("highlights") if ai_summary_payload else None,
-        )
-
-        base_summary = localized_summaries["tr"]["summary"]
-        conditions_text = localized_summaries["tr"].get("conditions", "")
-        improvements_text = localized_summaries["tr"].get("improvements", "")
-
-        summaries.append(
-            {
-                "filename": filename,
-                "total_tests": total_tests,
-                "passed_tests": passed_tests,
-                "failed_tests": failed_tests,
-                "engine": engine_label,
-                "summary": base_summary,
-                "condition_evaluation": conditions_text,
-                "improvement_overview": improvements_text,
-                "localized_summaries": localized_summaries,
-                "report_type": report_type_key,
-                "report_type_label": report_type_label,
-                "alignment": alignment_key,
-                "success_rate": success_rate,
-                "failures": failure_details,
-                "structured_sections": structured_sections,
-                "highlights": analysis_highlights,
-            }
-        )
+            summaries.append(
+                {
+                    "filename": filename,
+                    "total_tests": total_tests,
+                    "passed_tests": passed_tests,
+                    "failed_tests": failed_tests,
+                    "engine": engine_label,
+                    "engine_key": engine_key,
+                    "summary": base_summary,
+                    "condition_evaluation": conditions_text,
+                    "improvement_overview": improvements_text,
+                    "localized_summaries": localized_summaries,
+                    "report_type": report_type_key,
+                    "report_type_label": report_type_label,
+                    "alignment": alignment_key,
+                    "success_rate": success_rate,
+                    "failures": failure_details,
+                    "structured_sections": structured_sections,
+                    "highlights": analysis_highlights,
+                }
+            )
 
     if processed_files == 0:
         return _json_error("Analiz için geçerli PDF dosyası bulunamadı.", 400)
@@ -1523,6 +1541,7 @@ def analyze_files_with_ai():
     return jsonify(
         {
             "engine": engine_label,
+            "engine_key": engine_key,
             "summaries": summaries,
             "message": (
                 f"{processed_files} dosya {engine_label} ile analiz edildi. "
