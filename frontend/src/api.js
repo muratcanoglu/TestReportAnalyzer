@@ -7,10 +7,39 @@ const client = axios.create({
 });
 
 export const uploadReport = async (file) => {
+  console.log('=== UPLOAD API CALL ===');
+  console.log('File:', file);
+  console.log('File name:', file.name);
+  console.log('File size:', file.size);
+  console.log('File type:', file.type);
+
+  // FormData oluştur
   const formData = new FormData();
-  formData.append("file", file);
-  const response = await client.post("/upload", formData);
-  return response.data;
+  formData.append('file', file);
+
+  console.log('FormData oluşturuldu');
+
+  try {
+    console.log('Request gönderiliyor: POST /api/upload');
+
+    const response = await axios.post(`${API_BASE}/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: 120000  // 2 dakika timeout (AI analizi uzun sürebilir)
+    });
+
+    console.log('Response alındı:', response.data);
+    return response.data;
+
+  } catch (error) {
+    console.error('=== UPLOAD ERROR ===');
+    console.error('Error:', error);
+    console.error('Response:', error.response?.data);
+    console.error('Status:', error.response?.status);
+
+    throw error;
+  }
 };
 
 export const getAllReports = async (sortBy = "date", order = "desc") => {

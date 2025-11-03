@@ -5,6 +5,7 @@ import os
 import logging
 import difflib
 import re
+from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -13,6 +14,12 @@ from werkzeug.utils import secure_filename
 
 try:  # pragma: no cover - import flexibility
     from .. import database
+    from ..database import (
+        insert_report,
+        insert_test_result,
+        update_report_comprehensive_analysis,
+        update_report_stats,
+    )
     from ..ai_analyzer import ai_analyzer
     from ..translation_utils import fallback_translate_text
     from ..pdf_analyzer import (
@@ -24,6 +31,12 @@ try:  # pragma: no cover - import flexibility
     )
 except ImportError:  # pragma: no cover
     import database  # type: ignore
+    from database import (  # type: ignore
+        insert_report,
+        insert_test_result,
+        update_report_comprehensive_analysis,
+        update_report_stats,
+    )
     from ai_analyzer import ai_analyzer  # type: ignore
     from translation_utils import fallback_translate_text  # type: ignore
     from pdf_analyzer import (  # type: ignore
@@ -37,6 +50,7 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 reports_bp = Blueprint("reports", __name__)
+bp = reports_bp
 
 
 def _json_error(message: str, status_code: int = 400):
@@ -882,164 +896,114 @@ def _build_multilingual_summary(
     return summaries
 
 
-@reports_bp.route("/upload", methods=["POST"])
+@bp.route('/upload', methods=['POST'])
 def upload_report():
-    if "file" not in request.files:
-        return _json_error("No file part in the request.", 400)
+    """PDF yükle ve analiz et"""
+    import logging
+    logger = logging.getLogger(__name__)
 
-    file = request.files["file"]
-    if file.filename == "":
-        return _json_error("No selected file.", 400)
+    logger.info("="*70)
+    logger.info("UPLOAD ENDPOINT CALLED")
+    logger.info("="*70)
+    logger.info(f"Request method: {request.method}")
+    logger.info(f"Request files: {request.files}")
+    logger.info(f"Request form: {request.form}")
 
-    upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
-    upload_folder.mkdir(parents=True, exist_ok=True)
+    # Dosya kontrolü
+    if 'file' not in request.files:
+        logger.error("'file' key not found in request.files")
+        logger.error(f"Available keys: {list(request.files.keys())}")
+        return jsonify({
+            'error': 'Dosya bulunamadı',
+            'detail': 'Request içinde "file" key\'i yok'
+        }), 400
 
-    filename = secure_filename(file.filename)
-    saved_path = upload_folder / filename
-    counter = 1
-    while saved_path.exists():
-        saved_path = upload_folder / f"{saved_path.stem}_{counter}{saved_path.suffix or '.pdf'}"
-        counter += 1
+    file = request.files['file']
 
-    file.save(saved_path)
+    # Dosya adı kontrolü
+    if file.filename == '':
+        logger.error("Empty filename")
+        return jsonify({'error': 'Dosya seçilmedi'}), 400
+
+    logger.info(f"Dosya alındı: {file.filename}")
+
+    # PDF kontrolü
+    if not file.filename.lower().endswith('.pdf'):
+        logger.error(f"Invalid file type: {file.filename}")
+        return jsonify({'error': 'Sadece PDF dosyaları desteklenir'}), 400
 
     try:
-        logger.info(f"=== PDF ANALİZ BAŞLADI: {filename} ===")
-        logger.info("Step 1: Text extraction")
-        extraction_result = extract_text_from_pdf(saved_path)
-        logger.info(
-            "Text uzunluğu: %s",
-            len((extraction_result.get("text") or "")),
-        )
-        logger.info(
-            "Structured text uzunluğu: %s",
-            len((extraction_result.get("structured_text") or "")),
-        )
-        logger.info(
-            "Tablo sayısı: %s",
-            len(extraction_result.get("tables") or []),
-        )
+        # Dosyayı kaydet
+        filename = secure_filename(file.filename)
 
-        logger.info("Step 2: Comprehensive analysis")
-        analysis_result = analyze_pdf_comprehensive(saved_path)
-        logger.info("AI analizi tamamlandı")
+        # Uploads klasörü yoksa oluştur
+        uploads_dir = 'uploads'
+        if not os.path.exists(uploads_dir):
+            os.makedirs(uploads_dir)
+            logger.info(f"Uploads klasörü oluşturuldu: {uploads_dir}")
 
-        raw_text = analysis_result.pop("raw_text", "") or ""
-        sections = analysis_result.get("sections", {}) or {}
-        text_length = analysis_result.get("metadata", {}).get("text_length") or len(raw_text)
-        logger.info(f"Text uzunluğu: {text_length} karakter")
-        for section_name, section_content in sections.items():
-            section_len = len(section_content or "")
-            logger.info(f"Bölüm [{section_name}]: {section_len} karakter")
+        # Benzersiz dosya adı
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{filename}"
+        pdf_path = os.path.join(uploads_dir, unique_filename)
 
-        basic_stats = analysis_result.get("basic_stats", {})
-        parsed_results = basic_stats.get("tests", [])
-        logger.info(f"Bulunan test sayısı: {len(parsed_results)}")
-        if len(parsed_results) == 0:
-            logger.warning(f"UYARI: PDF'de hiç test bulunamadı! Dosya: {filename}")
-            preview = (raw_text or "")[:500]
-            if preview:
-                logger.debug(f"İlk 500 karakter: {preview}")
+        file.save(pdf_path)
+        logger.info(f"Dosya kaydedildi: {pdf_path}")
 
-        combined_text_for_type = raw_text or "\n".join(
-            value for value in sections.values() if isinstance(value, str)
-        )
-        report_type_key, report_type_label = infer_report_type(combined_text_for_type, filename)
-        logger.info("Step 3: Database save hazırlığı")
-    except AttributeError as exc:  # pragma: no cover - defensive
-        saved_path.unlink(missing_ok=True)
-        logger.error(f"AttributeError: {exc}", exc_info=True)
-        if "splitlines" in str(exc):
-            return (
-                jsonify(
-                    {
-                        "error": "PDF parse hatası: Veri formatı uyumsuzluğu",
-                        "detail": "extract_text_from_pdf dict döndürüyor ama kod string bekliyor",
-                        "hint": "pdf_analyzer.py dosyasındaki fonksiyonları kontrol edin",
-                    }
-                ),
-                500,
-            )
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
-        saved_path.unlink(missing_ok=True)
-        logger.error(f"PDF analiz hatası: {exc}", exc_info=True)
-        return (
-            jsonify(
-                {
-                    "error": "PDF analizi başarısız oldu",
-                    "detail": str(exc),
-                }
-            ),
-            500,
-        )
+        # Analiz başlat
+        logger.info("PDF analizi başlatılıyor...")
+        analysis_result = analyze_pdf_comprehensive(pdf_path)
 
-    comprehensive_analysis = analysis_result.get("comprehensive_analysis", {})
-    logger.info("Kapsamlı analiz database'e kaydediliyor...")
-    logger.info(
-        "  Test Koşulları: %s karakter",
-        len((comprehensive_analysis.get("test_conditions") or "")),
-    )
-    logger.info(
-        "  Grafikler: %s karakter",
-        len((comprehensive_analysis.get("graphs") or "")),
-    )
-    logger.info(
-        "  Sonuçlar: %s karakter",
-        len((comprehensive_analysis.get("results") or "")),
-    )
+        logger.info("Analiz tamamlandı, database'e kaydediliyor...")
 
-    report_id = database.insert_report(
-        filename,
-        str(saved_path),
-        report_type_key,
-        comprehensive_analysis,
-    )
+        # Database'e kaydet
+        report_id = insert_report(filename=filename, pdf_path=pdf_path)
 
-    total_tests = basic_stats.get("total_tests", 0)
-    passed_tests = basic_stats.get("passed", 0)
-    failed_tests = basic_stats.get("failed", 0)
-
-    for result in parsed_results:
-        database.insert_test_result(
+        # İstatistikleri kaydet
+        update_report_stats(
             report_id,
-            result.get("test_name", "Unknown Test"),
-            result.get("status", "PASS"),
-            result.get("error_message", ""),
-            result.get("failure_reason"),
-            result.get("suggested_fix"),
-            result.get("ai_provider", "rule-based"),
+            analysis_result['basic_stats']['total_tests'],
+            analysis_result['basic_stats']['passed'],
+            analysis_result['basic_stats']['failed']
         )
 
-    database.update_report_stats(report_id, total_tests, passed_tests, failed_tests)
-    database.update_report_comprehensive_analysis(
-        report_id,
-        comprehensive_analysis,
-        structured_data=analysis_result.get("structured_data"),
-        tables=analysis_result.get("tables"),
-    )
-    logger.info("Database kayıt tamamlandı")
+        # Kapsamlı analizi kaydet
+        update_report_comprehensive_analysis(
+            report_id,
+            analysis_result['comprehensive_analysis'],
+            analysis_result.get('structured_data'),
+            analysis_result.get('tables')
+        )
 
-    report = database.get_report_by_id(report_id)
-    if report is not None:
-        report["test_type_label"] = report_type_label
+        # Test sonuçlarını kaydet
+        for test in analysis_result['basic_stats']['tests']:
+            insert_test_result(
+                report_id,
+                test['name'],
+                test['status'],
+                test.get('error_message'),
+                test.get('failure_reason'),
+                test.get('suggested_fix'),
+                test.get('ai_provider', 'rule-based')
+            )
 
-    logger.info(f"=== PDF ANALİZ BİTTİ: {filename} ===")
+        logger.info(f"Rapor kaydedildi: ID={report_id}")
+        logger.info("="*70)
 
-    return (
-        jsonify(
-            {
-                "report": report,
-                "totals": {
-                    "total": total_tests,
-                    "passed": passed_tests,
-                    "failed": failed_tests,
-                },
-                "comprehensive_analysis": comprehensive_analysis,
-            }
-        ),
-        201,
-    )
+        return jsonify({
+            'success': True,
+            'report_id': report_id,
+            'filename': filename,
+            'basic_stats': analysis_result['basic_stats'],
+            'message': 'PDF başarıyla yüklendi ve analiz edildi'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Upload hatası: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Yükleme başarısız oldu',
+            'detail': str(e)
+        }), 500
 
 
 @reports_bp.route("/reports", methods=["GET"])

@@ -1487,3 +1487,134 @@ a:hover {
   margin-top: 8px;
   font-size: 0.875rem;
 }
+/* Upload Form */
+.upload-form {
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+}
+
+.upload-form h2 {
+    margin-bottom: 16px;
+    color: #1f2937;
+    font-size: 1.25rem;
+}
+
+/* Drop Zone */
+.drop-zone {
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    padding: 48px 24px;
+    text-align: center;
+    transition: all 0.3s;
+    background: #f9fafb;
+    cursor: pointer;
+}
+
+.drop-zone.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.drop-zone.has-file {
+    border-color: #10b981;
+    background: #ecfdf5;
+}
+
+.drop-zone-placeholder p {
+    margin: 8px 0;
+    color: #6b7280;
+}
+
+.or-text {
+    color: #9ca3af;
+    font-size: 0.875rem;
+    margin: 12px 0;
+}
+
+.file-select-btn {
+    display: inline-block;
+    background: #3b82f6;
+    color: white;
+    padding: 10px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.file-select-btn:hover {
+    background: #2563eb;
+}
+
+.hint-text {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin-top: 8px;
+}
+
+/* Selected File */
+.selected-file {
+    padding: 16px;
+}
+
+.selected-file p {
+    margin: 4px 0;
+    color: #1f2937;
+}
+
+.file-size {
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.remove-btn {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 8px;
+    font-size: 0.875rem;
+}
+
+.remove-btn:hover {
+    background: #dc2626;
+}
+
+/* Submit Button */
+.submit-btn {
+    width: 100%;
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 1rem;
+    margin-top: 16px;
+    transition: background 0.2s;
+}
+
+.submit-btn:hover:not(:disabled) {
+    background: #059669;
+}
+
+.submit-btn:disabled {
+    background: #d1d5db;
+    cursor: not-allowed;
+}
+
+/* Error Message */
+.error-message {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 12px;
+    border-radius: 6px;
+    margin-top: 12px;
+    border: 1px solid #fecaca;
+}
