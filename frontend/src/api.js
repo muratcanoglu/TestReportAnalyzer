@@ -4,17 +4,12 @@ const API_BASE = "http://localhost:5000/api";
 
 const client = axios.create({
   baseURL: API_BASE,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 export const uploadReport = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await client.post("/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const response = await client.post("/upload", formData);
   return response.data;
 };
 
@@ -63,9 +58,7 @@ export const analyzeReportsWithAI = async (files, engine) => {
   });
   formData.append("engine", engine);
 
-  const response = await client.post("/analyze-files", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const response = await client.post("/analyze-files", formData);
   return response.data;
 };
 
