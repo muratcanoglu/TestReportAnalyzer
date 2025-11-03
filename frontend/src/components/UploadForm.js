@@ -2,8 +2,22 @@ import React, { useEffect, useRef, useState } from "react";
 import { analyzeReportsWithAI, uploadReport } from "../api";
 
 const MIN_FILES = 1;
-const MAX_FILES = 2;
-const MAX_FILES_MESSAGE = "En fazla 2 pdf yükleyebilirsiniz!";
+const MAX_FILES = 1;
+const MAX_FILES_MESSAGE = "Sadece bir PDF yükleyebilirsiniz.";
+
+const isPdfFile = (file) => {
+  if (!file) {
+    return false;
+  }
+
+  const mimeType = String(file.type || "").toLowerCase();
+  if (mimeType === "application/pdf") {
+    return true;
+  }
+
+  const fileName = String(file.name || "").toLowerCase();
+  return fileName.endsWith(".pdf");
+};
 
 const UploadForm = ({
   onUploadSuccess,
@@ -39,26 +53,27 @@ const UploadForm = ({
   };
 
   const sanitizeFiles = (fileList) => {
-    const incomingFiles = Array.from(fileList ?? []);
+    const incomingFiles = Array.from(fileList ?? []).filter(Boolean);
 
     if (incomingFiles.length === 0) {
       return { files: [], error: "Lütfen en az bir PDF seçin." };
     }
 
-    const nonPdfFiles = incomingFiles.filter((file) => file.type !== "application/pdf");
+    const validPdfFiles = incomingFiles.filter((file) => isPdfFile(file));
+    const invalidFiles = incomingFiles.filter((file) => !isPdfFile(file));
 
-    if (nonPdfFiles.length > 0) {
+    if (invalidFiles.length > 0 || validPdfFiles.length !== incomingFiles.length) {
       return { files: [], error: "Yalnızca PDF formatındaki raporları yükleyebilirsiniz." };
     }
 
-    if (incomingFiles.length > MAX_FILES) {
+    if (validPdfFiles.length > MAX_FILES) {
       return {
         files: [],
         error: MAX_FILES_MESSAGE,
       };
     }
 
-    return { files: incomingFiles, error: null };
+    return { files: validPdfFiles.slice(0, MAX_FILES), error: null };
   };
 
   const handleFileSelection = (fileList) => {
@@ -97,7 +112,9 @@ const UploadForm = ({
       return;
     }
 
-    if (selectedFiles.length < MIN_FILES) {
+    const filesToProcess = selectedFiles.slice(0, MAX_FILES);
+
+    if (filesToProcess.length < MIN_FILES) {
       setStatusSafe({
         type: "error",
         message: `Lütfen en az ${MIN_FILES} adet PDF dosyası seçin.`,
@@ -106,7 +123,7 @@ const UploadForm = ({
       return;
     }
 
-    if (selectedFiles.length > MAX_FILES) {
+    if (filesToProcess.length > MAX_FILES) {
       setStatusSafe({
         type: "error",
         message: MAX_FILES_MESSAGE,
@@ -122,7 +139,7 @@ const UploadForm = ({
     let failCount = 0;
 
     try {
-      for (const file of selectedFiles) {
+      for (const file of filesToProcess) {
         try {
           await uploadReport(file);
           successCount += 1;
@@ -137,7 +154,7 @@ const UploadForm = ({
 
       if (successCount > 0) {
         try {
-          analysisResult = await analyzeReportsWithAI(selectedFiles, analysisEngine);
+          analysisResult = await analyzeReportsWithAI(filesToProcess, analysisEngine);
         } catch (error) {
           analysisErrorMessage =
             error?.response?.data?.error || "AI analizi sırasında bir sorun oluştu. Lütfen tekrar deneyin.";
@@ -230,7 +247,24 @@ const UploadForm = ({
     if (isProcessing) {
       return;
     }
-    handleFileSelection(event.dataTransfer?.files);
+    const directFiles = event.dataTransfer?.files;
+    if (directFiles && directFiles.length > 0) {
+      handleFileSelection(directFiles);
+      event.dataTransfer?.clearData?.();
+      return;
+    }
+
+    const itemFiles =
+      event.dataTransfer?.items &&
+      Array.from(event.dataTransfer.items)
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+
+    if (itemFiles && itemFiles.length > 0) {
+      handleFileSelection(itemFiles);
+      event.dataTransfer?.clearData?.();
+    }
   };
 
   const openFileDialog = () => {
@@ -265,12 +299,11 @@ const UploadForm = ({
           ref={fileInputRef}
           type="file"
           accept="application/pdf"
-          multiple
           onChange={handleFileChange}
           hidden
         />
         <p className="drag-area-title">PDF Test Raporlarını Sürükleyip Bırakabilirsiniz</p>
-        <p className="drag-area-subtitle">Aynı anda en fazla 2 pdf yükleyebilirsiniz!</p>
+        <p className="drag-area-subtitle">PDF Test Raporunu Yükle ve Analiz Et</p>
         <button
           type="button"
           className="button button-secondary"
@@ -286,16 +319,11 @@ const UploadForm = ({
         </button>
         {selectedFiles.length > 0 && (
           <div className="selected-files">
-            <span className="selected-file-name">
-              Seçilen {selectedFiles.length} PDF hazırlanıyor.
-            </span>
+            <span className="selected-file-name">Seçilen PDF analiz için hazır.</span>
             <ul className="selected-files-list">
-              {selectedFiles.slice(0, 5).map((file) => (
+              {selectedFiles.map((file) => (
                 <li key={file.name}>{file.name}</li>
               ))}
-              {selectedFiles.length > 5 && (
-                <li>+{selectedFiles.length - 5} adet daha...</li>
-              )}
             </ul>
           </div>
         )}
