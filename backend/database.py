@@ -96,6 +96,21 @@ def insert_report(
         return int(cursor.lastrowid)
 
 
+def report_exists_with_filename(filename: str) -> bool:
+    """Return whether a report with the provided filename already exists."""
+
+    normalized = (filename or "").strip()
+    if not normalized:
+        return False
+
+    with closing(_connect()) as conn:
+        cursor = conn.execute(
+            "SELECT 1 FROM reports WHERE LOWER(filename) = LOWER(?) LIMIT 1",
+            (normalized.lower(),),
+        )
+        return cursor.fetchone() is not None
+
+
 def update_report_stats(report_id: int, total: int, passed: int, failed: int) -> None:
     """Update aggregate statistics for a report."""
     with closing(_connect()) as conn:

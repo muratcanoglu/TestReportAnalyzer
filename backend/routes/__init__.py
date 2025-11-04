@@ -17,6 +17,7 @@ try:  # pragma: no cover - import flexibility
     from ..database import (
         insert_report,
         insert_test_result,
+        report_exists_with_filename,
         update_report_comprehensive_analysis,
         update_report_stats,
     )
@@ -34,6 +35,7 @@ except ImportError:  # pragma: no cover
     from database import (  # type: ignore
         insert_report,
         insert_test_result,
+        report_exists_with_filename,
         update_report_comprehensive_analysis,
         update_report_stats,
     )
@@ -959,6 +961,10 @@ def upload_report():
     try:
         # Dosyayı kaydet
         filename = secure_filename(file.filename)
+
+        if report_exists_with_filename(filename):
+            logger.warning("Duplicate upload attempt detected for %s", filename)
+            return jsonify({"error": "Bu rapor daha önce arşivlendi."}), 409
 
         # Uploads klasörü yoksa oluştur
         uploads_dir = 'uploads'

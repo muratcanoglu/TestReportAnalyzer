@@ -108,6 +108,7 @@ const HomeSection = ({
           isProcessing={isAnalysisProcessing}
           onProcessingStart={onAnalysisProcessingStart}
           onProcessingEnd={onAnalysisProcessingEnd}
+          existingReports={reports}
         />
       </div>
       <div className="card supported-types-card">
