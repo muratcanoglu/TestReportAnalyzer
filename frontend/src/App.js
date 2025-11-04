@@ -95,7 +95,7 @@ const App = () => {
   }, []);
 
   const recentAnalyses = useMemo(() => analysisHistory.slice(0, 2), [analysisHistory]);
-  const archivedAnalyses = useMemo(() => analysisHistory.slice(2), [analysisHistory]);
+  const archivedAnalyses = useMemo(() => [...analysisHistory], [analysisHistory]);
 
   const filteredReports = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

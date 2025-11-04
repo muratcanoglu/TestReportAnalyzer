@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { analyzeReportsWithAI, uploadReport } from "../api";
 import { resolveEngineLabel } from "../utils/analysisUtils";
+import { normaliseFilenameForComparison } from "../utils/fileUtils";
 
 const UploadForm = ({
   analysisEngine = "chatgpt",
@@ -9,6 +10,7 @@ const UploadForm = ({
   isProcessing = false,
   onProcessingStart,
   onProcessingEnd,
+  existingReports = [],
 }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -21,6 +23,14 @@ const UploadForm = ({
     () => resolveEngineLabel(analysisEngine),
     [analysisEngine]
   );
+
+  const existingFilenames = useMemo(() => {
+    return new Set(
+      existingReports
+        .map((report) => normaliseFilenameForComparison(report?.filename))
+        .filter(Boolean)
+    );
+  }, [existingReports]);
 
   const isBusy = isProcessing || localProcessing;
 
@@ -35,6 +45,12 @@ const UploadForm = ({
     resetMessages();
 
     if (file && file.type === "application/pdf") {
+      const normalizedName = normaliseFilenameForComparison(file.name);
+      if (normalizedName && existingFilenames.has(normalizedName)) {
+        setError("Bu rapor daha önce arşivlendi.");
+        setSelectedFile(null);
+        return;
+      }
       setSelectedFile(file);
     } else {
       setError("Lütfen sadece PDF dosyası seçin");
@@ -65,6 +81,12 @@ const UploadForm = ({
     }
 
     if (file.type === "application/pdf") {
+      const normalizedName = normaliseFilenameForComparison(file.name);
+      if (normalizedName && existingFilenames.has(normalizedName)) {
+        setError("Bu rapor daha önce arşivlendi.");
+        setSelectedFile(null);
+        return;
+      }
       setSelectedFile(file);
     } else {
       setError("Lütfen sadece PDF dosyası yükleyin");
@@ -80,6 +102,12 @@ const UploadForm = ({
     }
 
     if (isBusy) {
+      return;
+    }
+
+    const normalizedName = normaliseFilenameForComparison(selectedFile.name);
+    if (normalizedName && existingFilenames.has(normalizedName)) {
+      setError("Bu rapor daha önce arşivlendi.");
       return;
     }
 

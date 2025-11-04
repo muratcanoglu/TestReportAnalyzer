@@ -7,6 +7,7 @@ import {
 import { resolveEngineLabel } from "../utils/analysisUtils";
 import { detectReportType, getReportStatusLabel } from "../utils/reportUtils";
 import AnalysisSummaryCard from "./AnalysisSummaryCard";
+import { normaliseFilenameForComparison } from "../utils/fileUtils";
 
 const deriveLaboratory = (filename = "", detectedType = "") => {
   const name = filename.toLowerCase();
@@ -91,6 +92,14 @@ const ArchiveManagement = ({
   const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0 });
   const [analysisFeedback, setAnalysisFeedback] = useState(null);
   const [activeAnalysisId, setActiveAnalysisId] = useState(null);
+
+  const existingFilenames = useMemo(() => {
+    return new Set(
+      reports
+        .map((report) => normaliseFilenameForComparison(report?.filename))
+        .filter(Boolean)
+    );
+  }, [reports]);
 
   const enrichedReports = useMemo(
     () =>
@@ -233,30 +242,51 @@ const ArchiveManagement = ({
         return;
       }
 
-      setSelectedFiles((previous) => {
-        const availableSlots = MAX_MULTI_UPLOAD_FILES - previous.length;
-        if (availableSlots <= 0) {
-          setMultiUploadStatus({
-            type: "warning",
-            message: `En fazla ${MAX_MULTI_UPLOAD_FILES} adet PDF yükleyebilirsiniz.`,
-          });
-          return previous;
-        }
+      const availableSlots = MAX_MULTI_UPLOAD_FILES - selectedFiles.length;
+      if (availableSlots <= 0) {
+        setMultiUploadStatus({
+          type: "warning",
+          message: `En fazla ${MAX_MULTI_UPLOAD_FILES} adet PDF yükleyebilirsiniz.`,
+        });
+        return;
+      }
 
-        const acceptedFiles = pdfFiles.slice(0, availableSlots);
-        if (acceptedFiles.length < pdfFiles.length) {
-          setMultiUploadStatus({
-            type: "warning",
-            message: `En fazla ${MAX_MULTI_UPLOAD_FILES} adet PDF yükleyebilirsiniz.`,
-          });
-        } else {
-          setMultiUploadStatus(null);
-        }
+      const limitedFiles = pdfFiles.slice(0, availableSlots);
+      const existingNameSet = new Set(
+        selectedFiles.map((file) => normaliseFilenameForComparison(file?.name)).filter(Boolean)
+      );
+      const acceptedFiles = [];
+      let duplicateDetected = false;
 
-        return [...previous, ...acceptedFiles];
+      limitedFiles.forEach((file) => {
+        const normalized = normaliseFilenameForComparison(file?.name);
+        if (normalized && (existingFilenames.has(normalized) || existingNameSet.has(normalized))) {
+          duplicateDetected = true;
+          return;
+        }
+        existingNameSet.add(normalized);
+        acceptedFiles.push(file);
       });
+
+      if (acceptedFiles.length > 0) {
+        setSelectedFiles([...selectedFiles, ...acceptedFiles]);
+      }
+
+      let status = null;
+      if (duplicateDetected) {
+        status = { type: "error", message: "Bu rapor daha önce arşivlendi." };
+      } else if (pdfFiles.length > availableSlots) {
+        status = {
+          type: "warning",
+          message: `En fazla ${MAX_MULTI_UPLOAD_FILES} adet PDF yükleyebilirsiniz.`,
+        };
+      } else if (acceptedFiles.length === 0) {
+        status = { type: "warning", message: "Yeni PDF dosyası eklenemedi." };
+      }
+
+      setMultiUploadStatus(status);
     },
-    []
+    [existingFilenames, selectedFiles]
   );
 
   const handleFileInputChange = useCallback(
