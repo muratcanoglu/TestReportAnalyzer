@@ -1,13 +1,29 @@
 """Utilities for extracting and interpreting test results from PDF reports."""
 from __future__ import annotations
 
+import io
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import pdfplumber
 from PyPDF2 import PdfReader
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:  # pragma: no cover - optional dependency
+    fitz = None  # type: ignore
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover - optional dependency
+    Image = None  # type: ignore
+
+try:
+    import pytesseract
+except ImportError:  # pragma: no cover - optional dependency
+    pytesseract = None  # type: ignore
 
 try:  # pragma: no cover - allow execution both as package and script
     from .ai_analyzer import (
@@ -184,6 +200,146 @@ def extract_text_from_pdf(pdf_path: Path | str) -> Dict[str, object]:
         "tables": tables,
         "structured_text": joined_structured or joined_text,
     }
+
+
+def extract_graph_images(
+    pdf_path: Path | str,
+    *,
+    max_images_per_page: int = 5,
+) -> List[Dict[str, object]]:
+    """Extract raster images from a PDF to be used for OCR analysis."""
+
+    pdf_path = Path(pdf_path)
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+
+    if fitz is None:  # pragma: no cover - optional dependency guard
+        logger.warning("PyMuPDF (fitz) bulunamadı, grafik görselleri çıkarılamıyor.")
+        return []
+
+    images: List[Dict[str, object]] = []
+    seen_xrefs: set[int] = set()
+
+    try:
+        document = fitz.open(str(pdf_path))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("PDF görsel çıkarımı başarısız: %s", exc)
+        return []
+
+    try:
+        for page_index, page in enumerate(document, start=1):
+            page_images = page.get_images(full=True)
+            if not page_images:
+                continue
+
+            for image_index, image in enumerate(page_images[:max_images_per_page], start=1):
+                xref = image[0]
+                if xref in seen_xrefs:
+                    continue
+
+                seen_xrefs.add(xref)
+                try:
+                    base_image = document.extract_image(xref)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug(
+                        "Sayfa %s'ndeki grafik çıkarılamadı (xref=%s): %s",
+                        page_index,
+                        xref,
+                        exc,
+                    )
+                    continue
+
+                image_bytes = base_image.get("image")
+                if not image_bytes:
+                    continue
+
+                images.append(
+                    {
+                        "page": page_index,
+                        "order": image_index,
+                        "xref": xref,
+                        "width": base_image.get("width"),
+                        "height": base_image.get("height"),
+                        "ext": base_image.get("ext", "png"),
+                        "image_bytes": image_bytes,
+                    }
+                )
+    finally:
+        document.close()
+
+    return images
+
+
+def ocr_graph_images(
+    graph_images: Sequence[Dict[str, object]],
+    *,
+    language: str = "eng+tur",
+) -> List[Dict[str, object]]:
+    """Run OCR on extracted graph images and return non-empty text segments."""
+
+    if not graph_images:
+        return []
+
+    if pytesseract is None or Image is None:  # pragma: no cover - optional dependency guard
+        logger.warning("pytesseract veya Pillow eksik, grafik OCR atlandı.")
+        return []
+
+    results: List[Dict[str, object]] = []
+
+    for image_info in graph_images:
+        image_bytes = image_info.get("image_bytes")
+        if not image_bytes:
+            continue
+
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as pil_image:
+                if pil_image.mode not in {"L", "RGB"}:
+                    pil_image = pil_image.convert("RGB")
+                grayscale = pil_image.convert("L")
+
+                text = pytesseract.image_to_string(grayscale, lang=language)
+        except AttributeError:  # pragma: no cover - pillow missing features
+            logger.warning("Pillow yüklenemedi, grafik OCR atlandı.")
+            return []
+        except pytesseract.pytesseract.TesseractNotFoundError as exc:  # type: ignore[attr-defined]
+            logger.warning("Tesseract bulunamadı: %s", exc)
+            return []
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug(
+                "Grafik OCR hata verdi (sayfa=%s, xref=%s): %s",
+                image_info.get("page"),
+                image_info.get("xref"),
+                exc,
+            )
+            continue
+
+        cleaned_text = (text or "").strip()
+        if cleaned_text:
+            results.append(
+                {
+                    "page": image_info.get("page"),
+                    "order": image_info.get("order"),
+                    "text": cleaned_text,
+                }
+            )
+
+    return results
+
+
+def _format_graph_ocr_results(ocr_results: Sequence[Dict[str, object]]) -> str:
+    """Format OCR results into a single multi-line string."""
+
+    lines: List[str] = []
+    for entry in ocr_results:
+        text = (entry.get("text") or "").strip()
+        if not text:
+            continue
+
+        page = entry.get("page")
+        prefix = f"[Sayfa {page}] " if page else ""
+        lines.append(f"{prefix}{text}")
+
+    return "\n".join(lines)
 
 
 def _normalise_status(token: str) -> Optional[str]:
@@ -545,21 +701,51 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
         logger.info("\n  [5.2] Grafikler")
         graph_text = sections.get("load_values", "") or sections.get("measurement_data", "")
 
+        try:
+            graph_images = extract_graph_images(pdf_path)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("    Grafik görselleri çıkarılamadı: %s", exc)
+            graph_images = []
+
+        ocr_results = ocr_graph_images(graph_images)
+        ocr_text = _format_graph_ocr_results(ocr_results)
+
+        if ocr_text:
+            logger.info("    OCR metni uzunluğu: %s karakter", len(ocr_text))
+        else:
+            logger.info("    OCR metni bulunamadı veya boş")
+
+        combined_graph_text = graph_text.strip()
+        if ocr_text:
+            combined_graph_text = (combined_graph_text + "\n\n" + ocr_text).strip()
+
         if measurement_params:
             logger.info("    Measurement params var: %s grup", len(measurement_params))
             logger.info("    Graph text: %s karakter", len(graph_text))
 
-            analysis["graphs"] = analyze_graphs(
-                graph_text,
+            analysis_graphs = analyze_graphs(
+                combined_graph_text,
                 tables=tables,
                 measurement_params=measurement_params,
             )
+
+            if ocr_text:
+                analysis_graphs = (
+                    analysis_graphs.rstrip()
+                    + "\n\nEk OCR Notları:\n"
+                    + ocr_text
+                )
+
+            analysis["graphs"] = analysis_graphs
 
             logger.info("    Output: %s karakter", len(analysis["graphs"]))
             logger.info("    Özet: %s...", analysis["graphs"][:100])
         else:
             logger.warning("    Measurement params YOK")
-            analysis["graphs"] = "Ölçüm parametreleri tespit edilemedi."
+            if combined_graph_text:
+                analysis["graphs"] = "Grafik metni:\n" + combined_graph_text
+            else:
+                analysis["graphs"] = "Ölçüm parametreleri tespit edilemedi."
 
         # Sonuçlar
         logger.info("\n  [5.3] Sonuçlar")

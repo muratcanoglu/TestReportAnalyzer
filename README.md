@@ -21,6 +21,7 @@ TestReportAnalyzer, otomatik test raporlarını analiz ederek başarısız testl
 - Python 3.11+
 - Node.js 18+ ve npm
 - PDF analizinde kullanılan kütüphaneler için temel C++ yapı araçları (gerekmesi halinde)
+- Grafik OCR özelliği için Tesseract OCR 5+ (Windows için [UB Mannheim dağıtımı](https://github.com/UB-Mannheim/tesseract/wiki) önerilir)
 
 ## Kurulum
 Tüm adımlar PowerShell içerisinde uygulanmalıdır.
@@ -68,6 +69,26 @@ cd TestReportAnalyzer
 3. SQLite veritabanını başlatmak için `init_db()` fonksiyonunu çalıştırır.
 4. Frontend bağımlılıklarını (`frontend` klasöründe) yükler.
 5. PDF yüklemeleri için `backend/uploads/` klasörünü oluşturur.
+
+### Grafik OCR için ek adımlar
+
+Grafik görsellerinden metin elde eden yeni OCR modülü için aşağıdaki bağımlılıkların yüklü olduğundan emin olun:
+
+- Python paketleri: `pymupdf`, `pytesseract`, `pillow` (otomatik olarak `backend/requirements.txt` ile kurulur).
+- Sistem bileşeni: **Tesseract OCR** yürütülebilir dosyası.
+
+Windows üzerinde Tesseract kurulumu için önerilen adımlar:
+
+```powershell
+# https://github.com/UB-Mannheim/tesseract/wiki adresinden son sürümü indirip kurun
+# Kurulum sırasında "Add to PATH" seçeneğini işaretleyin.
+
+# Kurulum sonrasında sürümü doğrulayın
+tesseract --version
+```
+
+Kurulum tamamlandıktan sonra `pytesseract` kütüphanesi Tesseract yürütücüsünü otomatik olarak algılar. Farklı bir klasöre
+kurulmuşsa, yolu `.env` dosyasında `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe` şeklinde belirtebilirsiniz.
 
 > **Node.js Yüklü Değil mi?**
 >
