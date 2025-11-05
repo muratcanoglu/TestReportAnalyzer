@@ -74,8 +74,18 @@ cd TestReportAnalyzer
 
 Grafik görsellerinden metin elde eden yeni OCR modülü için aşağıdaki bağımlılıkların yüklü olduğundan emin olun:
 
-- Python paketleri: `pymupdf`, `pytesseract`, `pillow` (otomatik olarak `backend/requirements.txt` ile kurulur).
+- Python paketleri: `pytesseract`, `pillow` (otomatik olarak `backend/requirements.txt` ile kurulur).
 - Sistem bileşeni: **Tesseract OCR** yürütülebilir dosyası.
+
+> **PyMuPDF (fitz) Opsiyoneldir**
+>
+> Gelişmiş grafik çıkarımı için `PyMuPDF` paketini ayrıca kurabilirsiniz. Ancak Python 3.13 ve/veya Windows ortamlarında
+> hazır tekerlek (wheel) bulunmadığında derleme aşaması Visual Studio Build Tools gerektirir. Bu yüzden varsayılan
+> kurulumda PyMuPDF zorunlu değildir; ihtiyaç halinde uygun ortamda manuel olarak kurabilirsiniz:
+>
+> ```powershell
+> pip install pymupdf==1.24.5
+> ```
 
 Windows üzerinde Tesseract kurulumu için önerilen adımlar:
 
