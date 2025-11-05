@@ -503,7 +503,7 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
         logger.info("\n[3] Format-Specific Parse")
         if pdf_format == "kielt_format":
             sections = parse_kielt_format(text)
-            measurement_params = extract_measurement_params(text)
+            measurement_params = extract_measurement_params(text, tables=tables)
 
             logger.info("  Kielt parse tamamlandı:")
             logger.info("    - Bölüm sayısı: %s", len(sections))
