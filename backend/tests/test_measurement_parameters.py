@@ -101,6 +101,12 @@ def test_analyze_pdf_comprehensive_passes_measurement_params(monkeypatch: pytest
     monkeypatch.setattr(
         "backend.pdf_analyzer.parse_test_results", lambda *_args, **_kwargs: []
     )
+    monkeypatch.setattr(
+        "backend.pdf_analyzer.extract_graph_images", lambda _path: []
+    )
+    monkeypatch.setattr(
+        "backend.pdf_analyzer.ocr_graph_images", lambda _images: []
+    )
 
     def _fake_analyze_graphs(graph_text, *, tables, measurement_params):
         captured["graph_text"] = graph_text
