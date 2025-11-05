@@ -1,7 +1,9 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   analyzeReportsWithAI,
+  compareReports,
   downloadReportFile,
+  getReportDownloadUrl,
   uploadReport,
 } from "../api";
 import { resolveEngineLabel } from "../utils/analysisUtils";
@@ -86,12 +88,15 @@ const ArchiveManagement = ({
   const [filtersApplied, setFiltersApplied] = useState(false);
   const [isArchiveCollapsed, setIsArchiveCollapsed] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [selectedArchiveIds, setSelectedArchiveIds] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const [multiUploadStatus, setMultiUploadStatus] = useState(null);
   const [isMultiUploading, setIsMultiUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0 });
-  const [analysisFeedback, setAnalysisFeedback] = useState(null);
-  const [activeAnalysisId, setActiveAnalysisId] = useState(null);
+  const [archiveActionFeedback, setArchiveActionFeedback] = useState(null);
+  const [archiveComparisonResult, setArchiveComparisonResult] = useState(null);
+  const [isArchiveProcessing, setIsArchiveProcessing] = useState(false);
+  const [isArchiveComparing, setIsArchiveComparing] = useState(false);
 
   const existingFilenames = useMemo(() => {
     return new Set(
@@ -395,43 +400,142 @@ const ArchiveManagement = ({
     }
   }, [analysisEngine, onRefresh, selectedFiles]);
 
-  const handleAnalyzeReport = useCallback(
-    async (report) => {
-      if (!report?.id || activeAnalysisId) {
-        return;
-      }
+  const toggleArchiveSelection = useCallback((id) => {
+    setSelectedArchiveIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }, []);
 
-      setActiveAnalysisId(report.id);
-      setAnalysisFeedback({
-        type: "info",
-        message: `${report.filename} ${engineLabel} ile analiz ediliyor...`,
+  const handleCompareSelected = useCallback(async () => {
+    if (selectedArchiveIds.length < 2) {
+      setArchiveActionFeedback({
+        type: "warning",
+        message: "Karşılaştırma için en az iki rapor seçmelisiniz.",
       });
+      return;
+    }
 
-      try {
-        const blob = await downloadReportFile(report.id);
-        const filename = report.filename || `report-${report.id}.pdf`;
-        const fileForAnalysis = createFileLike(blob, filename);
-        const result = await analyzeReportsWithAI([fileForAnalysis], analysisEngine);
+    if (selectedArchiveIds.length > 2) {
+      setArchiveActionFeedback({
+        type: "warning",
+        message: "En Fazla 2 Adet Test Raporunu Karşılaştırma Yapabilirsiniz!",
+      });
+      return;
+    }
 
-        setAnalysisFeedback({
-          type: "success",
-          message:
-            result?.message || `${report.filename} ${engineLabel} analizi tamamlandı.`,
-        });
+    setIsArchiveComparing(true);
+    setArchiveActionFeedback({
+      type: "info",
+      message: "Seçilen raporlar karşılaştırılıyor...",
+    });
 
-        onAnalysisComplete?.(result, { source: "archive", engineKey: analysisEngine });
-      } catch (error) {
-        const message =
-          error?.response?.data?.error ||
-          error?.message ||
-          "AI analizi sırasında bir hata oluştu. Lütfen tekrar deneyin.";
-        setAnalysisFeedback({ type: "error", message });
-      } finally {
-        setActiveAnalysisId(null);
-      }
-    },
-    [activeAnalysisId, analysisEngine, engineLabel, onAnalysisComplete]
-  );
+    try {
+      const response = await compareReports(selectedArchiveIds);
+      setArchiveComparisonResult(response);
+      setArchiveActionFeedback({
+        type: "success",
+        message: response?.summary || "Karşılaştırma tamamlandı.",
+      });
+    } catch (error) {
+      const message =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Karşılaştırma sırasında bir sorun oluştu. Lütfen tekrar deneyin.";
+      setArchiveActionFeedback({ type: "error", message });
+      setArchiveComparisonResult(null);
+    } finally {
+      setIsArchiveComparing(false);
+    }
+  }, [selectedArchiveIds]);
+
+  const handleAnalyzeSelected = useCallback(async () => {
+    if (isArchiveProcessing) {
+      return;
+    }
+
+    if (selectedArchiveIds.length === 0) {
+      setArchiveActionFeedback({
+        type: "warning",
+        message: "Analize göndermek için rapor seçin.",
+      });
+      return;
+    }
+
+    if (selectedArchiveIds.length > 2) {
+      setArchiveActionFeedback({
+        type: "warning",
+        message: "En Fazla 2 Adet Test Raporunu Analiz Edebilirsiniz!",
+      });
+      return;
+    }
+
+    setIsArchiveProcessing(true);
+    setArchiveActionFeedback({
+      type: "info",
+      message: `${selectedArchiveIds.length} rapor ${engineLabel} ile yeniden analiz ediliyor...`,
+    });
+
+    try {
+      const files = await Promise.all(
+        selectedArchiveIds.map(async (id) => {
+          const report = reports.find((item) => item.id === id);
+          if (!report) {
+            throw new Error("Seçilen rapor bulunamadı.");
+          }
+          const blob = await downloadReportFile(id);
+          const filename = report.filename || `report-${id}.pdf`;
+          return createFileLike(blob, filename);
+        })
+      );
+
+      const result = await analyzeReportsWithAI(files, analysisEngine);
+
+      onAnalysisComplete?.(result, { source: "archive", engineKey: analysisEngine });
+
+      setArchiveActionFeedback({
+        type: "success",
+        message:
+          result?.message || `${selectedArchiveIds.length} rapor başarıyla analiz edildi.`,
+      });
+      setSelectedArchiveIds([]);
+    } catch (error) {
+      const message =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Analiz sırasında bir sorun oluştu. Lütfen tekrar deneyin.";
+      setArchiveActionFeedback({ type: "error", message });
+    } finally {
+      setIsArchiveProcessing(false);
+    }
+  }, [analysisEngine, engineLabel, isArchiveProcessing, onAnalysisComplete, reports, selectedArchiveIds]);
+
+  const handleViewSelected = useCallback(() => {
+    if (selectedArchiveIds.length !== 1) {
+      setArchiveActionFeedback({
+        type: "warning",
+        message: "Bir raporu görüntülemek için tek rapor seçin.",
+      });
+      return;
+    }
+
+    const [reportId] = selectedArchiveIds;
+    const report = reports.find((item) => item.id === reportId);
+
+    if (!report) {
+      setArchiveActionFeedback({
+        type: "error",
+        message: "Seçilen rapor bulunamadı.",
+      });
+      return;
+    }
+
+    const pdfUrl = getReportDownloadUrl(reportId);
+    window.open(pdfUrl, "_blank", "noopener,noreferrer");
+    setArchiveActionFeedback({
+      type: "info",
+      message: "PDF raporu yeni sekmede açılıyor...",
+    });
+  }, [reports, selectedArchiveIds]);
 
   const hasFilters = Object.values(filters).some(Boolean);
 
@@ -676,18 +780,25 @@ const ArchiveManagement = ({
               <table className="table archive-table">
                 <thead>
                   <tr>
+                    <th></th>
                     <th>Raporun Adı</th>
                     <th>Yüklenme Tarihi</th>
                     <th>Yüklenme Saati</th>
                     <th>Test Tipi</th>
                     <th>Laboratuvar</th>
                     <th>Model</th>
-                    <th>İşlem</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedReports.map((report) => (
                     <tr key={report.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedArchiveIds.includes(report.id)}
+                          onChange={() => toggleArchiveSelection(report.id)}
+                        />
+                      </td>
                       <td>{report.filename}</td>
                       <td>{report.uploadDate ? report.uploadDate.toLocaleDateString() : "-"}</td>
                       <td>
@@ -701,18 +812,6 @@ const ArchiveManagement = ({
                       <td>{report.detectedType || "Bilinmeyen"}</td>
                       <td>{report.laboratory}</td>
                       <td>{report.model}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="button button-secondary analyze-button"
-                          onClick={() => handleAnalyzeReport(report)}
-                          disabled={activeAnalysisId === report.id}
-                        >
-                          {activeAnalysisId === report.id
-                            ? "Analiz Ediliyor..."
-                            : "AI ile Analiz Et"}
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -720,9 +819,58 @@ const ArchiveManagement = ({
             </div>
           )}
 
-          {analysisFeedback && (
-            <div className={`alert alert-${analysisFeedback.type}`} role="status">
-              {analysisFeedback.message}
+          {sortedReports.length > 0 && (
+            <div className="report-actions">
+              <button
+                className="button"
+                type="button"
+                onClick={handleCompareSelected}
+                disabled={isArchiveComparing}
+              >
+                {isArchiveComparing ? "Karşılaştırılıyor..." : "Karşılaştır"}
+              </button>
+              <button
+                className="button button-primary"
+                type="button"
+                onClick={handleAnalyzeSelected}
+                disabled={isArchiveProcessing}
+              >
+                {isArchiveProcessing ? "Analiz Ediliyor..." : "Analize Gönder"}
+              </button>
+              <button className="button" type="button" onClick={handleViewSelected}>
+                Görüntüle
+              </button>
+            </div>
+          )}
+
+          {archiveActionFeedback && (
+            <div className={`alert alert-${archiveActionFeedback.type}`} role="status">
+              {archiveActionFeedback.message}
+            </div>
+          )}
+
+          {archiveComparisonResult && (
+            <div className="card comparison-card">
+              <div className="card-header">
+                <div>
+                  <h3>Karşılaştırma Sonucu</h3>
+                  <p className="muted-text">
+                    {archiveComparisonResult.first_report?.filename} ↔{" "}
+                    {archiveComparisonResult.second_report?.filename}
+                  </p>
+                </div>
+                {archiveComparisonResult.similarity !== undefined && (
+                  <span className="badge badge-info">
+                    Benzerlik %
+                    {archiveComparisonResult.similarity?.toFixed?.(1) ??
+                      archiveComparisonResult.similarity}
+                  </span>
+                )}
+              </div>
+              <p>
+                {archiveComparisonResult.summary ||
+                  "Karşılaştırma tamamlandı, detaylar rapor özetinde listelendi."}
+              </p>
             </div>
           )}
         </div>
