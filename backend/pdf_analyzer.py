@@ -635,20 +635,36 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
     )
 
     logger = logging.getLogger(__name__)
+    pdf_path_obj = Path(pdf_path)
     logger.info("\n%s", "=" * 70)
-    logger.info("PDF ANALİZ BAŞLADI: %s", pdf_path)
+    logger.info("PDF ANALİZ BAŞLADI: %s", pdf_path_obj)
     logger.info("%s", "=" * 70)
 
     try:
         # 1. Text extraction
         logger.info("\n[1] Text Extraction")
         extraction_result = extract_text_from_pdf(pdf_path)
-        text = extraction_result.get("structured_text", "")
+        text = (
+            extraction_result.get("structured_text")
+            or extraction_result.get("text")
+            or ""
+        )
         tables = extraction_result.get("tables", [])
 
         logger.info("  Text: %s karakter", len(text))
         logger.info("  Tablo: %s adet", len(tables))
         logger.info("  İlk 300 karakter:\n%s", text[:300])
+
+        # 1.1 Report type inference
+        report_type_key, report_type_label = infer_report_type(
+            text,
+            pdf_path_obj.name,
+        )
+        logger.info(
+            "  İnfer edilen rapor türü: %s (%s)",
+            report_type_key,
+            report_type_label,
+        )
 
         # 2. Format detection
         logger.info("\n[2] Format Detection")
@@ -769,6 +785,8 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
         logger.info("%s\n", "=" * 70)
 
         return {
+            "report_type": report_type_key,
+            "report_type_label": report_type_label,
             "basic_stats": {
                 "total_tests": len(basic_results),
                 "passed": len([t for t in basic_results if t["status"] == "PASS"]),
