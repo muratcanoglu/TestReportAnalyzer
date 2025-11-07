@@ -987,8 +987,18 @@ def upload_report():
 
         logger.info("Analiz tamamlandı, database'e kaydediliyor...")
 
+        report_type_key = str(analysis_result.get("report_type", "unknown") or "unknown").strip().lower()
+        report_type_label = (
+            analysis_result.get("report_type_label")
+            or _resolve_report_type_label(report_type_key)
+        )
+
         # Database'e kaydet
-        report_id = insert_report(filename=filename, pdf_path=pdf_path)
+        report_id = insert_report(
+            filename=filename,
+            pdf_path=pdf_path,
+            test_type=report_type_key,
+        )
 
         # İstatistikleri kaydet
         update_report_stats(
@@ -1028,6 +1038,8 @@ def upload_report():
             'basic_stats': analysis_result['basic_stats'],
             'analysis_engine': engine_label,
             'analysis_engine_key': engine_key,
+            'report_type': report_type_key,
+            'report_type_label': report_type_label,
             'message': 'PDF başarıyla yüklendi ve analiz edildi'
         }), 200
 
