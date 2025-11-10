@@ -81,7 +81,9 @@ Grafik görsellerinden metin elde eden yeni OCR modülü için aşağıdaki bağ
 >
 > Gelişmiş grafik çıkarımı için `PyMuPDF` paketini ayrıca kurabilirsiniz. Ancak Python 3.13 ve/veya Windows ortamlarında
 > hazır tekerlek (wheel) bulunmadığında derleme aşaması Visual Studio Build Tools gerektirir. Bu yüzden varsayılan
-> kurulumda PyMuPDF zorunlu değildir; ihtiyaç halinde uygun ortamda manuel olarak kurabilirsiniz:
+> kurulumda PyMuPDF zorunlu değildir; ihtiyaç halinde uygun ortamda manuel olarak kurabilirsiniz. Ayrıntılı adımlar ve
+> yaygın hata çözümleri için [`docs/windows_setup_troubleshooting.md`](docs/windows_setup_troubleshooting.md) dosyasına
+> göz atabilirsiniz:
 >
 > ```powershell
 > pip install pymupdf==1.24.5
