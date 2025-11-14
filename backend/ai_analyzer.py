@@ -1127,7 +1127,9 @@ def _format_params_fallback(params: Sequence[Dict[str, object]]) -> str:
         name = param.get("name", "Parametre")
         unit = param.get("unit", "")
         values = list(param.get("values") or [])[:3]
-        values_str = ", ".join(str(v) for v in values)
+        values_str = ", ".join(
+            format(v, "g") if isinstance(v, float) else str(v) for v in values
+        )
         if unit:
             lines.append(f"{name}: {values_str} {unit}")
         else:
