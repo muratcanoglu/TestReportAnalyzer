@@ -39,6 +39,7 @@ try:  # pragma: no cover - allow execution both as package and script
         parse_kielt_format,
     )
     from .pdf_section_analyzer import detect_sections
+    from .parsers.kielt_parser import parse_page_2_metadata
 except ImportError:  # pragma: no cover
     from ai_analyzer import (  # type: ignore
         ai_analyzer,
@@ -53,6 +54,7 @@ except ImportError:  # pragma: no cover
         parse_kielt_format,
     )
     from pdf_section_analyzer import detect_sections  # type: ignore
+    from parsers.kielt_parser import parse_page_2_metadata  # type: ignore
 
 PASS_PATTERN = r"(PASS|PASSED|SUCCESS|OK|✓|SUCCESSFUL|Başarılı|Geçti|BAŞARILI|GEÇTİ|Basarili|Gecti)"
 FAIL_PATTERN = r"(FAIL|FAILED|ERROR|EXCEPTION|✗|FAILURE|Başarısız|Kaldı|Hata|BAŞARISIZ|KALDI|HATA|Basarisiz|Kaldi)"
@@ -150,6 +152,7 @@ def extract_text_from_pdf(pdf_path: Path | str) -> Dict[str, object]:
     text_segments: List[str] = []
     structured_segments: List[str] = []
     tables: List[Dict[str, object]] = []
+    page_texts: List[str] = []
 
     try:
         with pdfplumber.open(pdf_path) as pdf:
@@ -159,6 +162,7 @@ def extract_text_from_pdf(pdf_path: Path | str) -> Dict[str, object]:
                     header = f"\n=== SAYFA {page_number} - METİN ===\n"
                     structured_segments.append(f"{header}{page_text}")
                     text_segments.append(page_text)
+                    page_texts.append(page_text)
 
                 extracted_tables = page.extract_tables() or []
                 for table_index, table in enumerate(extracted_tables, 1):
@@ -181,6 +185,7 @@ def extract_text_from_pdf(pdf_path: Path | str) -> Dict[str, object]:
         text_segments = []
         structured_segments = []
         tables = []
+        page_texts = []
 
     if not structured_segments:
         try:
@@ -188,9 +193,11 @@ def extract_text_from_pdf(pdf_path: Path | str) -> Dict[str, object]:
             text_pages = [page.extract_text() or "" for page in reader.pages]
             text_segments = [segment for segment in text_pages if segment]
             structured_segments = text_segments.copy()
+            page_texts = text_pages
         except Exception:
             text_segments = []
             structured_segments = []
+            page_texts = []
 
     joined_text = "\n".join(text_segments).strip()
     joined_structured = "\n".join(structured_segments).strip()
@@ -199,6 +206,7 @@ def extract_text_from_pdf(pdf_path: Path | str) -> Dict[str, object]:
         "text": joined_text,
         "tables": tables,
         "structured_text": joined_structured or joined_text,
+        "page_texts": page_texts,
     }
 
 
@@ -676,6 +684,45 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
         if pdf_format == "kielt_format":
             sections = parse_kielt_format(text)
             measurement_params = extract_measurement_params(text, tables=tables)
+
+            page_texts = extraction_result.get("page_texts") or []
+            if page_texts and len(page_texts) >= 2:
+                page_2_text = page_texts[1]
+                logger.info("  Sayfa 2 metni uzunluğu: %s", len(page_2_text))
+                try:
+                    page_2_metadata = parse_page_2_metadata(page_2_text)
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    logger.warning("  Sayfa 2 metadatası çıkarılamadı: %s", exc)
+                    page_2_metadata = {}
+
+                if page_2_metadata:
+                    sections["page_2_metadata"] = page_2_metadata
+                    missing_fields = [
+                        key
+                        for key, value in page_2_metadata.items()
+                        if key
+                        not in {
+                            "pruefling",
+                            "pruefergebnis",
+                            "lehnen_winkel_table",
+                            "raw_page_text",
+                        }
+                        and not value
+                    ]
+                    if missing_fields:
+                        logger.warning(
+                            "  Page-2 metadata eksik alanlar: %s",
+                            ", ".join(missing_fields),
+                        )
+                    else:
+                        logger.info("  Page-2 metadata eksiksiz bulundu")
+                else:
+                    logger.warning("  Page-2 metadata boş döndü")
+            else:
+                logger.warning(
+                    "  Page-2 metadata çıkarılamadı (toplam sayfa: %s)",
+                    len(page_texts),
+                )
 
             logger.info("  Kielt parse tamamlandı:")
             logger.info("    - Bölüm sayısı: %s", len(sections))
