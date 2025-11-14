@@ -1,13 +1,59 @@
 import axios from "axios";
 
-const API_BASE =
-  window.location.hostname === "localhost"
-    ? "http://localhost:5000/api"
-    : "http://127.0.0.1:5000/api";
+const isDebugEnabled =
+  String(process.env.REACT_APP_DEBUG || "")
+    .toLowerCase()
+    .trim() === "true";
+
+const debugLog = (...args) => {
+  if (isDebugEnabled) {
+    console.debug("[api]", ...args);
+  }
+};
+
+const resolveBaseUrl = () => {
+  const envBaseUrl = process.env.REACT_APP_API_BASE_URL?.trim();
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  const { hostname, origin } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:5000/api";
+  }
+
+  return `${origin.replace(/\/$/, "")}/api`;
+};
+
+const API_BASE = resolveBaseUrl();
+debugLog(`Using API base URL: ${API_BASE}`);
 
 const client = axios.create({
   baseURL: API_BASE,
 });
+
+client.interceptors.response.use(
+  (response) => {
+    debugLog(
+      `${response.config.method?.toUpperCase()} ${response.config.url}`,
+      response.status
+    );
+    return response;
+  },
+  (error) => {
+    if (error.config) {
+      debugLog(
+        `Request failed: ${error.config.method?.toUpperCase()} ${
+          error.config.url || ""
+        }`,
+        error.message
+      );
+    } else {
+      debugLog("Request error", error.message || error);
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const uploadReport = async (file, engine) => {
   const formData = new FormData();
@@ -18,7 +64,7 @@ export const uploadReport = async (file, engine) => {
   }
 
   try {
-    const response = await axios.post(`${API_BASE}/upload`, formData, {
+    const response = await client.post("/upload", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
@@ -64,7 +110,7 @@ export const deleteReport = async (id) => {
 };
 
 export const getAIStatus = async () => {
-  const response = await axios.get(`${API_BASE}/ai-status`);
+  const response = await client.get(`/ai-status`);
   return response.data;
 };
 
