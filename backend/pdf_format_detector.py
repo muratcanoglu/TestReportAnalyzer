@@ -130,7 +130,62 @@ _MEASUREMENT_NAME_MAP: Dict[str, Tuple[str, str]] = {
     "hac": ("HAC (Head Acceleration Criterion)", ""),
 }
 
-_NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
+_NUMBER_PATTERN = re.compile(r"[-+]?[0-9][0-9.,]*")
+
+
+def normalize_decimal(value: object) -> Optional[float]:
+    """Convert localized decimal strings into floats.
+
+    Handles values such as ``58,15``, ``1.234,56`` or ``1,234.56`` while
+    logging failures for debugging.
+    """
+
+    if value is None:
+        return None
+
+    text = str(value).strip().replace("\xa0", "")
+    if not text:
+        return None
+
+    sign = 1
+    if text[0] in "+-":
+        if text[0] == "-":
+            sign = -1
+        text = text[1:]
+
+    digits_only = text.replace(" ", "")
+    if not digits_only or not re.fullmatch(r"[0-9.,]+", digits_only):
+        logger.warning("normalize_decimal: non-numeric input skipped: %r", value)
+        return None
+
+    comma_pos = digits_only.rfind(",")
+    dot_pos = digits_only.rfind(".")
+
+    normalized = digits_only
+    if comma_pos != -1 and dot_pos != -1:
+        if comma_pos > dot_pos:
+            normalized = digits_only.replace(".", "").replace(",", ".")
+        else:
+            normalized = digits_only.replace(",", "")
+    elif comma_pos != -1:
+        fractional_digits = len(digits_only) - comma_pos - 1
+        if digits_only.count(",") == 1 and 0 < fractional_digits <= 2:
+            normalized = digits_only.replace(",", ".")
+        else:
+            normalized = digits_only.replace(",", "")
+    elif dot_pos != -1:
+        normalized = digits_only
+
+    if sign == -1:
+        normalized = f"-{normalized}"
+
+    try:
+        return float(normalized)
+    except ValueError:
+        logger.warning(
+            "normalize_decimal: unable to parse %r (normalized=%s)", value, normalized
+        )
+        return None
 
 
 def extract_measurement_params(
@@ -145,7 +200,7 @@ def extract_measurement_params(
         ThAC [g] 18.4
         FAC right F [kN] 4.40
     """
-    params_map: "OrderedDict[Tuple[str, str], List[str]]" = OrderedDict()
+    params_map: "OrderedDict[Tuple[str, str], Dict[str, List[object]]]" = OrderedDict()
 
     def _add_param(name: str, unit: str, values: Iterable[str]) -> None:
         name = (name or "").strip()
@@ -158,43 +213,47 @@ def extract_measurement_params(
 
         key = (name, unit)
         if key not in params_map:
-            params_map[key] = []
+            params_map[key] = {"values": [], "raw_values": []}
 
-        existing_values = params_map[key]
-        for value in values_list:
-            if value not in existing_values:
-                existing_values.append(value)
+        entry = params_map[key]
+        for raw_value in values_list:
+            normalized = normalize_decimal(raw_value)
+            if normalized is None:
+                continue
+            if normalized not in entry["values"]:
+                entry["values"].append(normalized)
+                entry["raw_values"].append(raw_value)
 
     # Pattern 1: "a Kopf über 3 ms [g] 58.15"
-    kopf_pattern = r"a\s+Kopf\s+über\s+3\s*ms\s*\[g\]\s*([\d\.]+)"
+    kopf_pattern = r"a\s+Kopf\s+über\s+3\s*ms\s*\[g\]\s*([\d,\.]+)"
     kopf_matches = re.findall(kopf_pattern, text, re.IGNORECASE)
     if kopf_matches:
         _add_param("Baş ivmesi (a Kopf über 3 ms)", "g", kopf_matches)
         logger.info("Kopf değerleri bulundu: %s", kopf_matches)
 
     # Pattern 2: "ThAC [g] 18.4"
-    thac_pattern = r"ThAC\s*\[g\]\s*([\d\.]+)"
+    thac_pattern = r"ThAC\s*\[g\]\s*([\d,\.]+)"
     thac_matches = re.findall(thac_pattern, text, re.IGNORECASE)
     if thac_matches:
         _add_param("Göğüs ivmesi (ThAC)", "g", thac_matches)
         logger.info("ThAC değerleri bulundu: %s", thac_matches)
 
     # Pattern 3: "FAC right F [kN] 4.40"
-    fac_right_pattern = r"FAC\s+right\s+F\s*\[kN\]\s*([\d\.]+)"
+    fac_right_pattern = r"FAC\s+right\s+F\s*\[kN\]\s*([\d,\.]+)"
     fac_right_matches = re.findall(fac_right_pattern, text, re.IGNORECASE)
     if fac_right_matches:
         _add_param("Sağ femur kuvveti (FAC right)", "kN", fac_right_matches)
         logger.info("FAC right değerleri bulundu: %s", fac_right_matches)
 
     # Pattern 4: "FAC left F [kN] 4.82"
-    fac_left_pattern = r"FAC\s+left\s+F\s*\[kN\]\s*([\d\.]+)"
+    fac_left_pattern = r"FAC\s+left\s+F\s*\[kN\]\s*([\d,\.]+)"
     fac_left_matches = re.findall(fac_left_pattern, text, re.IGNORECASE)
     if fac_left_matches:
         _add_param("Sol femur kuvveti (FAC left)", "kN", fac_left_matches)
         logger.info("FAC left değerleri bulundu: %s", fac_left_matches)
 
     # Pattern 5: "HAC, [120.1, 146.05 ms] 161.18"
-    hac_pattern = r"HAC,\s*\[[\d\.]+,\s*[\d\.]+\s*ms\]\s*([\d\.]+)"
+    hac_pattern = r"HAC,\s*\[[\d,\.]+,\s*[\d,\.]+\s*ms\]\s*([\d,\.]+)"
     hac_matches = re.findall(hac_pattern, text, re.IGNORECASE)
     if hac_matches:
         _add_param("HAC (Head Acceleration Criterion)", "", hac_matches)
@@ -205,8 +264,13 @@ def extract_measurement_params(
         _add_param(param["name"], param["unit"], param["values"])
 
     params = [
-        {"name": name, "unit": unit, "values": values}
-        for (name, unit), values in params_map.items()
+        {
+            "name": name,
+            "unit": unit,
+            "values": entry["values"],
+            "raw_values": entry["raw_values"],
+        }
+        for (name, unit), entry in params_map.items()
     ]
 
     logger.info("Toplam %s parametre grubu bulundu", len(params))
@@ -372,9 +436,9 @@ def _extract_numeric_values(cell: str) -> List[str]:
     matches = _NUMBER_PATTERN.findall(cell.replace("\xa0", " "))
     values: List[str] = []
     for match in matches:
-        normalised = match.replace(",", ".")
-        if normalised:
-            values.append(normalised)
+        cleaned = match.strip()
+        if cleaned:
+            values.append(cleaned)
     return values
 
 
@@ -384,6 +448,12 @@ def _localise_measurement_name(name: str) -> Tuple[str, str]:
     if mapped:
         return mapped
     return name, ""
+
+
+def _stringify_value(value: object) -> str:
+    if isinstance(value, float):
+        return format(value, "g")
+    return str(value)
 
 
 def format_measurement_params_for_ai(params):
@@ -399,13 +469,16 @@ def format_measurement_params_for_ai(params):
         name = param["name"]
         unit = param["unit"]
         values = param["values"]
+        formatted_values = [_stringify_value(value) for value in values]
 
-        if len(values) == 1:
-            lines.append(f"• {name}: {values[0]} {unit}")
-        elif len(values) == 2:
-            lines.append(f"• {name}: {values[0]} {unit} ve {values[1]} {unit}")
+        if len(formatted_values) == 1:
+            lines.append(f"• {name}: {formatted_values[0]} {unit}")
+        elif len(formatted_values) == 2:
+            lines.append(
+                f"• {name}: {formatted_values[0]} {unit} ve {formatted_values[1]} {unit}"
+            )
         else:
-            values_str = ", ".join(values[:3])
+            values_str = ", ".join(formatted_values[:3])
             lines.append(f"• {name}: {values_str} {unit}")
 
     return "\n".join(lines)
@@ -415,5 +488,6 @@ __all__ = [
     "detect_pdf_format",
     "parse_kielt_format",
     "extract_measurement_params",
+    "normalize_decimal",
     "format_measurement_params_for_ai",
 ]

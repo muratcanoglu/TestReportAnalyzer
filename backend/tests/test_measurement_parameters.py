@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.pdf_analyzer import analyze_pdf_comprehensive
-from backend.pdf_format_detector import extract_measurement_params
+from backend.pdf_format_detector import extract_measurement_params, normalize_decimal
 import backend.pdf_format_detector as _pdf_format_detector_module
 
 sys.modules.setdefault("pdf_format_detector", _pdf_format_detector_module)
@@ -37,6 +37,28 @@ def _sample_measurement_tables() -> List[dict]:
     ]
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("58,15", 58.15),
+        ("1234.56", 1234.56),
+        ("1.234,56", 1234.56),
+        ("1,234.56", 1234.56),
+        ("-4,82", -4.82),
+    ],
+)
+def test_normalize_decimal_variants(raw: str, expected: float):
+    result = normalize_decimal(raw)
+    assert result is not None
+    assert result == pytest.approx(expected)
+
+
+def test_normalize_decimal_invalid_input_logs(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level("WARNING"):
+        assert normalize_decimal("not-a-number") is None
+    assert any("normalize_decimal" in record.message for record in caplog.records)
+
+
 def test_extract_measurement_params_from_tables():
     tables = _sample_measurement_tables()
 
@@ -46,29 +68,52 @@ def test_extract_measurement_params_from_tables():
         {
             "name": "Baş ivmesi (a Kopf über 3 ms)",
             "unit": "g",
-            "values": ["58.15", "64.72"],
+            "values": [58.15, 64.72],
+            "raw_values": ["58,15", "64,72"],
         },
         {
             "name": "Göğüs ivmesi (ThAC)",
             "unit": "g",
-            "values": ["18.40", "18.27"],
+            "values": [18.4, 18.27],
+            "raw_values": ["18,40", "18,27"],
         },
         {
             "name": "Sağ femur kuvveti (FAC right)",
             "unit": "kN",
-            "values": ["4.40", "5.94"],
+            "values": [4.4, 5.94],
+            "raw_values": ["4,40", "5,94"],
         },
         {
             "name": "Sol femur kuvveti (FAC left)",
             "unit": "kN",
-            "values": ["4.82", "6.34"],
+            "values": [4.82, 6.34],
+            "raw_values": ["4,82", "6,34"],
         },
         {
             "name": "HAC (Head Acceleration Criterion)",
             "unit": "",
-            "values": ["161.18", "283.27"],
+            "values": [161.18, 283.27],
+            "raw_values": ["161,18", "283,27"],
         },
     ]
+
+
+def test_extract_measurement_params_from_text_supports_commas():
+    text = """
+    a Kopf über 3 ms [g] 58,15
+    ThAC [g] 18,40
+    FAC right F [kN] 4,40
+    FAC left F [kN] 4,82
+    HAC, [120,10, 146,05 ms] 161,18
+    """
+
+    params = extract_measurement_params(text)
+
+    head = next(param for param in params if param["name"].startswith("Baş"))
+    assert head["values"] == pytest.approx([58.15])
+    thac = next(param for param in params if param["name"].startswith("Göğüs"))
+    assert thac["values"] == pytest.approx([18.4])
+    assert thac["raw_values"] == ["18,40"]
 
 
 def test_analyze_pdf_comprehensive_passes_measurement_params(monkeypatch: pytest.MonkeyPatch):

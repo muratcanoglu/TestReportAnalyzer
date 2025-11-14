@@ -5,6 +5,8 @@ import logging
 import re
 from typing import Dict, Iterable, List, Mapping
 
+from backend.pdf_format_detector import normalize_decimal
+
 logger = logging.getLogger(__name__)
 
 _SIMPLE_PAGE2_FIELDS: Mapping[str, Iterable[str]] = {
@@ -117,15 +119,11 @@ def normalize_float(value: str) -> str:
     if not value:
         return ""
 
-    cleaned = value.strip()
-    cleaned = re.sub(r"[^0-9,\.-]", "", cleaned)
-    cleaned = cleaned.replace(",", ".")
-    match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
-    if not match:
+    normalised = normalize_decimal(value)
+    if normalised is None:
         return ""
-    number = float(match.group(0))
-    normalized = ("%0.2f" % number).rstrip("0").rstrip(".")
-    return normalized
+    normalized = ("%0.2f" % normalised).rstrip("0").rstrip(".")
+    return normalized or "0"
 
 
 def extract_lehnen_winkel_table(text: str) -> List[Dict[str, str]]:
