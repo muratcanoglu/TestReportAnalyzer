@@ -107,6 +107,28 @@ kurulmuşsa, yolu `.env` dosyasında `TESSERACT_CMD=C:\Program Files\Tesseract-O
 > Kurulum sırasında Node.js veya npm bulunamazsa betik backend kurulumuna devam eder ancak frontend bağımlılıkları adımını
 > atlar. Bu durumda Node.js 18+ sürümünü yükledikten sonra `frontend` klasöründe `npm install` komutunu manuel olarak çalıştırmanız yeterlidir.
 
+## Configuration
+
+### Frontend API Configuration
+
+Frontend, build anında `frontend/.env` dosyasındaki `REACT_APP_*` değişkenlerini okur. Örnek bir dosya `frontend/.env.example`
+olarak depoda yer alır.
+
+1. `frontend` klasörüne gidin ve örnek dosyayı kopyalayın:
+   ```bash
+   cd frontend
+   cp .env.example .env
+   ```
+2. Yerel geliştirmede `REACT_APP_API_BASE_URL` değerini backend'in çalıştığı hosta göre güncelleyin (varsayılan: `http://localhost:5000/api`).
+3. Üretim için `cp .env.example .env.production` komutu ile ayrı bir dosya oluşturun ve alanı dağıttığınız domaine göre güncelleyin (örnek: `https://qa.your-company.com/api`).
+4. `REACT_APP_DEBUG` değerini `true` bırakırsanız frontend tarayıcı konsolunda ayrıntılı API logları görürsünüz. Üretim derlemelerinde `false` değerine çekmeniz önerilir.
+
+> Not: `.env` ve `.env.production` dosyaları Git'e eklenmez; değişiklikleri dağıtım ortamında yönetmeniz gerekir.
+
+#### Backend CORS Beklentileri
+
+Frontend farklı bir domain/port üzerinden hizmet verecekse backend'in CORS ayarlarının ilgili origin'i (örn. `http://localhost:3000` veya `https://qa.your-company.com`) izinli listesine eklenmesi gerekir. Varsayılan Flask uygulaması `frontend/.env` dosyasındaki host ile eşleşen origin'lerden gelen `fetch/XHR` çağrılarına izin verecek şekilde yapılandırılmalıdır; aksi halde tarayıcı CORS hatalarıyla karşılaşırsınız.
+
 ## AI Entegrasyonu (Opsiyonel)
 
 Uygulama, test başarısızlıklarını analiz ederken **Claude** veya **ChatGPT** kullanabilir.
