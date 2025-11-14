@@ -5,7 +5,10 @@ import logging
 import re
 from typing import Dict, Iterable, List, Mapping
 
-from backend.pdf_format_detector import normalize_decimal
+try:  # pragma: no cover - allow running both as package and script
+    from ..pdf_format_detector import normalize_decimal
+except ImportError:  # pragma: no cover
+    from pdf_format_detector import normalize_decimal  # type: ignore
 
 logger = logging.getLogger(__name__)
 
