@@ -3,14 +3,65 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, Iterable, List, Mapping
-
-try:  # pragma: no cover - allow running both as package and script
-    from ..pdf_format_detector import normalize_decimal
-except ImportError:  # pragma: no cover
-    from pdf_format_detector import normalize_decimal  # type: ignore
+from typing import Dict, Iterable, List, Mapping, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_decimal(value_str: Optional[str]) -> Optional[float]:
+    """Normalize locale-aware decimal strings into floats.
+
+    Handles numbers that use comma or dot as decimal separators, optional
+    thousand separators and whitespace. Returns ``None`` if the value cannot be
+    parsed and logs a warning to aid debugging.
+    """
+
+    if value_str is None:
+        return None
+
+    text = value_str.strip().replace("\xa0", "")
+    if not text:
+        return None
+
+    sign = 1
+    if text[0] in "+-":
+        if text[0] == "-":
+            sign = -1
+        text = text[1:]
+
+    digits_only = text.replace(" ", "")
+    if not digits_only or not re.fullmatch(r"[0-9.,]+", digits_only):
+        logger.warning("normalize_decimal: non-numeric input skipped: %r", value_str)
+        return None
+
+    comma_pos = digits_only.rfind(",")
+    dot_pos = digits_only.rfind(".")
+
+    normalized = digits_only
+    if comma_pos != -1 and dot_pos != -1:
+        if comma_pos > dot_pos:
+            normalized = digits_only.replace(".", "").replace(",", ".")
+        else:
+            normalized = digits_only.replace(",", "")
+    elif comma_pos != -1:
+        fractional_digits = len(digits_only) - comma_pos - 1
+        if digits_only.count(",") == 1 and 0 < fractional_digits <= 2:
+            normalized = digits_only.replace(",", ".")
+        else:
+            normalized = digits_only.replace(",", "")
+    elif dot_pos != -1:
+        normalized = digits_only
+
+    if sign == -1:
+        normalized = f"-{normalized}"
+
+    try:
+        return float(normalized)
+    except ValueError:
+        logger.warning(
+            "normalize_decimal: unable to parse %r (normalized=%s)", value_str, normalized
+        )
+        return None
 
 _SIMPLE_PAGE2_FIELDS: Mapping[str, Iterable[str]] = {
     "pruefbericht_nr": [r"Pr[üu]fbericht[-\s]*Nr\.?\s*[:\-]\s*([^\n]+)"],
@@ -116,27 +167,27 @@ def extract_pruefergebnis(text: str) -> Dict[str, str]:
     return extract_subfields(text, "Prüfergebnis", _PRUEFERGEBNIS_PATTERNS)
 
 
-def normalize_float(value: str) -> str:
-    """Normalize decimal strings by replacing commas and stripping units."""
+def normalize_float(value: str) -> Optional[float]:
+    """Return a float from a localized string containing degrees."""
 
     if not value:
-        return ""
+        return None
 
-    normalised = normalize_decimal(value)
-    if normalised is None:
-        return ""
-    normalized = ("%0.2f" % normalised).rstrip("0").rstrip(".")
-    return normalized or "0"
+    cleaned = value.replace("°", "").strip()
+    if not cleaned:
+        return None
+
+    return normalize_decimal(cleaned)
 
 
-def extract_lehnen_winkel_table(text: str) -> List[Dict[str, str]]:
+def extract_lehnen_winkel_table(text: str) -> List[Dict[str, object]]:
     """Parse rows of the Lehnen/Winkel table."""
 
     block_text = _extract_block(text, r"Lehnen[\s/\-]*Winkel", treat_as_regex=True)
     if not block_text:
         return []
 
-    rows: List[Dict[str, str]] = []
+    rows: List[Dict[str, object]] = []
     row_pattern = re.compile(
         r"(?P<label>[^:]+?)\s*:?-?\s*links\s*(?P<linkes>-?\d+[\.,]?\d*)°?\s*(?:[|/,]|und|&)?\s*rechts\s*(?P<rechts>-?\d+[\.,]?\d*)°?",
         re.IGNORECASE,
