@@ -102,8 +102,8 @@ def test_parse_page2_metadata(sample_page2_text: str):
     }
 
     assert metadata["lehnen_winkel_table"] == [
-        {"position": "1. Reihe", "winkel_links": "14.5", "winkel_rechts": "13.8"},
-        {"position": "2. Reihe", "winkel_links": "16.2", "winkel_rechts": "16.1"},
+        {"position": "1. Reihe", "winkel_links": 14.5, "winkel_rechts": 13.8},
+        {"position": "2. Reihe", "winkel_links": 16.2, "winkel_rechts": 16.1},
     ]
 
     simple_values = {
