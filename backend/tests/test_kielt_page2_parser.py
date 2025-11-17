@@ -20,21 +20,13 @@ sys.modules.setdefault("pdf_analyzer", _pdf_analyzer_module)
 
 _SAMPLE_PAGE2_TEXT = """
 Seite 2
-Prüfbericht-Nr.: KIELT-2024-009
-Auftrags-Nr.: A-7788
-Auftraggeber: Mustermann GmbH
-Werk: Bursa Werk 1
-Auftrag vom: 14.03.2024
-Prüfort: Testhalle Kiel
-Prüfdatum: 21.03.2024
-Kundennummer: 445-33
-Ansprechpartner: Dipl.-Ing. Paul Adler
-Telefon: +49 431 0000
-E-Mail: paul.adler@example.com
-Prüfgrundlage: ECE-R 80
-Prüfumfang: Lehnenversuch
-Messmittel: GOM ZX
-Prüfmittelüberwachung: gültig bis 03/2025
+Auftraggeber: Metrobus GmbH
+Anwesende: Herr Mustermann, Frau Testerin
+Versuchsbedingungen: UN-R80 Phase 2.2, Sitzrückhaltesystem
+Justierung/Kontrolle: MINIdau 200 Hz, Prüfstand kalibriert am 12.03.2024
+Schlittenverzögerung: 35 g / 120 ms
+Examiner: IWW Kiel
+Testfahrzeug: MAN Lion's Coach C (M3)
 
 Prüfling:
 Bezeichnung: Reisebussitz Doppelsitz
@@ -43,16 +35,28 @@ Typ: LX-900
 Serien-Nr.: SN-456
 Baujahr: 2023
 Gewicht: 85 kg
+Hinten montiert:
+    Gurt: 3-Punkt Serie
+    Adapter: Standardaufnahme
+Vorne montiert:
+    Gurt: 3-Punkt Serie
+    Adapter: Crash-Adapter B
 
 Prüfergebnis:
 Ergebnis: bestanden
 Freigabe: Serienfertigung frei
 Prüfer: Dipl.-Ing. Schmidt
 Datum: 22.03.2024
+Dummyprüfung:
+    Dummy Checks: P10 + 50M Hybrid III geprüft
+    Rückhaltung: keine Auffälligkeiten
+    Kanten: alle Kanten gerundet
+    Bemerkung: keine Beanstandung
 
 Lehnen / Winkel:
-1. Reihe links 14,5° | rechts 13,8°
-2. Reihe links 16,2° | rechts 16,1°
+Position          Hinten links   Hinten rechts   Vorne links   Vorne rechts
+Vorher:           14,5°          13,8°           16,2°         16,1°
+Nachher:          13,5°          13,2°           15,9°         15,5°
 """.strip()
 
 
@@ -65,21 +69,13 @@ def test_parse_page2_metadata(sample_page2_text: str):
     metadata = parse_page_2_metadata(sample_page2_text)
 
     expected_simple_fields = {
-        "pruefbericht_nr": "KIELT-2024-009",
-        "auftrags_nr": "A-7788",
-        "auftraggeber": "Mustermann GmbH",
-        "werk": "Bursa Werk 1",
-        "auftrag_vom": "14.03.2024",
-        "pruefort": "Testhalle Kiel",
-        "pruefdatum": "21.03.2024",
-        "kundennummer": "445-33",
-        "ansprechpartner": "Dipl.-Ing. Paul Adler",
-        "telefon": "+49 431 0000",
-        "email": "paul.adler@example.com",
-        "pruefgrundlage": "ECE-R 80",
-        "pruefumfang": "Lehnenversuch",
-        "messmittel": "GOM ZX",
-        "pruefmittelueberwachung": "gültig bis 03/2025",
+        "auftraggeber": "Metrobus GmbH",
+        "anwesende": "Herr Mustermann, Frau Testerin",
+        "versuchsbedingungen": "UN-R80 Phase 2.2, Sitzrückhaltesystem",
+        "justierung_kontrolle": "MINIdau 200 Hz, Prüfstand kalibriert am 12.03.2024",
+        "schlittenverzoegerung": "35 g / 120 ms",
+        "examiner": "IWW Kiel",
+        "testfahrzeug": "MAN Lion's Coach C (M3)",
     }
 
     for key, value in expected_simple_fields.items():
@@ -92,6 +88,8 @@ def test_parse_page2_metadata(sample_page2_text: str):
         "seriennummer": "SN-456",
         "baujahr": "2023",
         "gewicht": "85 kg",
+        "hinten_montiert": {"gurt": "3-Punkt Serie", "adapter": "Standardaufnahme"},
+        "vorne_montiert": {"gurt": "3-Punkt Serie", "adapter": "Crash-Adapter B"},
     }
 
     assert metadata["pruefergebnis"] == {
@@ -99,12 +97,28 @@ def test_parse_page2_metadata(sample_page2_text: str):
         "freigabe": "Serienfertigung frei",
         "pruefer": "Dipl.-Ing. Schmidt",
         "datum": "22.03.2024",
+        "dummypruefung": {
+            "dummy_checks": "P10 + 50M Hybrid III geprüft",
+            "rueckhaltung": "keine Auffälligkeiten",
+            "kanten": "alle Kanten gerundet",
+            "bemerkung": "keine Beanstandung",
+        },
     }
 
-    assert metadata["lehnen_winkel_table"] == [
-        {"position": "1. Reihe", "winkel_links": 14.5, "winkel_rechts": 13.8},
-        {"position": "2. Reihe", "winkel_links": 16.2, "winkel_rechts": 16.1},
-    ]
+    assert metadata["lehnen_winkel_table"] == {
+        "vorher": {
+            "hinten_links": 14.5,
+            "hinten_rechts": 13.8,
+            "vorne_links": 16.2,
+            "vorne_rechts": 16.1,
+        },
+        "nachher": {
+            "hinten_links": 13.5,
+            "hinten_rechts": 13.2,
+            "vorne_links": 15.9,
+            "vorne_rechts": 15.5,
+        },
+    }
 
     simple_values = {
         key: value
@@ -112,11 +126,16 @@ def test_parse_page2_metadata(sample_page2_text: str):
         if key
         not in {"pruefling", "pruefergebnis", "lehnen_winkel_table", "raw_page_text"}
     }
-    assert len(simple_values) == 15
+    assert len(simple_values) == len(expected_simple_fields)
 
 
 def test_analyze_pdf_attaches_page2_metadata(monkeypatch: pytest.MonkeyPatch):
-    fake_metadata = {"pruefbericht_nr": "KIELT-2024-009", "pruefling": {}, "pruefergebnis": {}, "lehnen_winkel_table": []}
+    fake_metadata = {
+        "auftraggeber": "Metrobus GmbH",
+        "pruefling": {},
+        "pruefergebnis": {},
+        "lehnen_winkel_table": {},
+    }
 
     def _fake_extract_text_from_pdf(_):
         return {
