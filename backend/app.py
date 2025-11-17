@@ -2,8 +2,14 @@
 from __future__ import annotations
 
 import os
-import logging
+import sys
 from pathlib import Path
+
+BACKEND_ROOT = Path(__file__).resolve().parent
+if (backend_root_str := str(BACKEND_ROOT)) not in sys.path:
+    sys.path.insert(0, backend_root_str)
+
+import logging
 
 logging.basicConfig(
     level=logging.INFO,
