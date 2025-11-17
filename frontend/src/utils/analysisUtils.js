@@ -82,25 +82,46 @@ export const resolveEngineLabel = (engineKey) => {
   return engineKey;
 };
 
-export const createAnalysisEntry = (result, { engineKey, source } = {}) => {
+export const createAnalysisEntry = (result, context = {}) => {
   if (!result) {
     return null;
   }
 
-  const timestamp = new Date();
-  const entry = {
-    id: `${timestamp.getTime()}-${Math.random().toString(16).slice(2, 8)}`,
-    timestamp: timestamp.toISOString(),
-    engine: result.engine ?? resolveEngineLabel(engineKey),
-    message: result.message ?? "",
-    summaries: Array.isArray(result.summaries) ? result.summaries : [],
-  };
-
-  if (source) {
-    entry.source = source;
+  // Check for backend errors
+  if (result.error) {
+    console.error("AI Analysis Error:", result.error);
+    return {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      engine: context.engineKey || "unknown",
+      error: result.error,
+      summary: "Analiz başarısız oldu. Lütfen tekrar deneyin.",
+      details: result.raw_response || "Detay bulunamadı",
+    };
   }
 
-  return entry;
+  // Validate required fields
+  if (!result.overall_summary || !result.measured_values) {
+    console.warn("Incomplete AI response:", result);
+    return {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      engine: context.engineKey || "unknown",
+      summary: result.summary || "Analiz tamamlandı ancak bazı veriler eksik",
+      details: JSON.stringify(result, null, 2),
+    };
+  }
+
+  // Normal processing...
+  return {
+    id: Date.now(),
+    timestamp: new Date().toISOString(),
+    engine: context.engineKey || "unknown",
+    summary: result.overall_summary?.success_rate
+      ? `${result.overall_summary.passed}/${result.overall_summary.total_tests} test başarılı (${result.overall_summary.success_rate})`
+      : result.summary || "Analiz tamamlandı",
+    details: result,
+  };
 };
 
 export const formatAnalysisTimestamp = (timestamp) => {

@@ -3,23 +3,35 @@
 from __future__ import annotations
 
 import json
-import re
+import logging
 from typing import Any, Dict, Optional, Tuple
 
 from anthropic import Anthropic
 
 try:  # pragma: no cover - prefer absolute imports in package context
+    from backend.ai_response_handler import (
+        parse_ai_response_safely,
+        validate_analysis_response,
+    )
     from backend.config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY
     from backend.detailed_prompt_template import build_simplified_analysis_prompt
     from backend.structured_analyzer import build_structured_data_for_ai
 except ImportError:  # pragma: no cover - fallback for script execution
     try:
+        from .ai_response_handler import (  # type: ignore
+            parse_ai_response_safely,
+            validate_analysis_response,
+        )
         from .config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY  # type: ignore
         from .detailed_prompt_template import (  # type: ignore
             build_simplified_analysis_prompt,
         )
         from .structured_analyzer import build_structured_data_for_ai  # type: ignore
     except ImportError:  # pragma: no cover - running from repository root
+        from ai_response_handler import (  # type: ignore
+            parse_ai_response_safely,
+            validate_analysis_response,
+        )
         from config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY  # type: ignore
         from detailed_prompt_template import (  # type: ignore
             build_simplified_analysis_prompt,
@@ -38,6 +50,7 @@ except ImportError:  # pragma: no cover - fallback for script execution
             parse_page_2_metadata = None  # type: ignore
 
 _client: Anthropic | None = None
+logger = logging.getLogger(__name__)
 
 
 def _get_client() -> Anthropic:
@@ -115,37 +128,6 @@ def _load_structured_metadata(
     return None
 
 
-def _strip_markdown_code_fences(text: str) -> str:
-    if not text:
-        return ""
-    cleaned = text.strip()
-    code_block_pattern = re.compile(r"^```[a-zA-Z0-9]*\s*(?P<inner>[\s\S]+?)\s*```$", re.IGNORECASE)
-    match = code_block_pattern.match(cleaned)
-    if match:
-        return match.group("inner").strip()
-    return cleaned
-
-
-def _parse_json_output(text: str) -> Optional[Dict[str, Any]]:
-    if not text:
-        return None
-    try:
-        loaded = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            snippet = text[start : end + 1]
-            try:
-                loaded = json.loads(snippet)
-            except json.JSONDecodeError:
-                return None
-        else:
-            return None
-
-    return loaded if isinstance(loaded, dict) else None
-
-
 def analyze_with_claude(text: str) -> Dict[str, Any]:
     """Generate a detailed JSON analysis for the provided PDF text via Claude."""
 
@@ -165,8 +147,19 @@ def analyze_with_claude(text: str) -> Dict[str, Any]:
     message = client.messages.create(
         model=AI_ANTHROPIC_MODEL,
         max_tokens=4000,
-        temperature=0.1,
-        system="SADECE JSON formatında yanıt ver",
+        temperature=0.0,
+        system=(
+            "You are a test report analyzer. You MUST respond ONLY with valid JSON.\n\n"
+            "CRITICAL RULES:\n"
+            "- Response MUST start with {\n"
+            "- Response MUST end with }\n"
+            "- NO markdown code blocks\n"
+            "- NO explanatory text before or after JSON\n"
+            "- NO comments inside JSON\n"
+            "- Use double quotes for strings\n"
+            "- Ensure all brackets and braces are balanced\n\n"
+            "If you cannot extract a value, use null instead of omitting the field."
+        ),
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -183,18 +176,13 @@ def analyze_with_claude(text: str) -> Dict[str, Any]:
         text_out = str(message)
 
     raw_text = (text_out or "").strip()
-    cleaned_text = _strip_markdown_code_fences(raw_text)
-    parsed_json = _parse_json_output(cleaned_text)
-    text_field = (
-        json.dumps(parsed_json, ensure_ascii=False)
-        if parsed_json is not None
-        else cleaned_text
-    )
+    parsed_data = parse_ai_response_safely(raw_text)
 
-    return {
-        "provider": "claude",
-        "model": AI_ANTHROPIC_MODEL,
-        "text": text_field,
-        "data": parsed_json,
-        "raw_response": raw_text,
-    }
+    if not validate_analysis_response(parsed_data):
+        logger.error("Invalid AI response: %s", parsed_data)
+        return {
+            "error": "AI returned invalid format",
+            "raw_response": raw_text[:500],
+        }
+
+    return parsed_data

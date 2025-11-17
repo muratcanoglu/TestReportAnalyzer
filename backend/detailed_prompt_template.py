@@ -50,6 +50,73 @@ def build_simplified_analysis_prompt(structured_data: Optional[Dict[str, Any]]) 
 
     Ham metin özeti:
     {text_excerpt}
+
+    === OUTPUT FORMAT (MANDATORY) ===
+
+    You MUST respond with this EXACT JSON structure. Fill in the values based on the data above:
+
+    {{
+      "report_id": "kielt19_86",
+      "test_type": "ECE-R80 Darbe Testi",
+      "test_date": "YYYY-MM-DD",
+      "test_conditions": {{
+        "vehicle": "...",
+        "seat": "...",
+        "velocity": "...",
+        "standard": "UN-R80"
+      }},
+      "measured_values": {{
+        "left_dummy": {{
+          "HAC": 98.27,
+          "HAC_status": "PASS",
+          "HAC_limit": 500,
+          "ThAC": 14.51,
+          "ThAC_status": "PASS",
+          "ThAC_limit": 30,
+          "FAC_right": 4.71,
+          "FAC_left": 4.31,
+          "FAC_status": "PASS",
+          "FAC_limit": 10,
+          "overall_result": "PASS"
+        }},
+        "right_dummy": {{
+          "HAC": 119.41,
+          "HAC_status": "PASS",
+          "HAC_limit": 500,
+          "ThAC": 14.91,
+          "ThAC_status": "PASS",
+          "ThAC_limit": 30,
+          "FAC_right": 3.11,
+          "FAC_left": 3.65,
+          "FAC_status": "PASS",
+          "FAC_limit": 10,
+          "overall_result": "PASS"
+        }}
+      }},
+      "graph_analysis": {{
+        "head_acceleration": "HAC values: Left 98.27, Right 119.41. Both within limits.",
+        "chest_acceleration": "ThAC values: Left 14.51g, Right 14.91g. Both within limits.",
+        "thigh_force": "FAC values within acceptable range."
+      }},
+      "overall_summary": {{
+        "total_tests": 4,
+        "passed": 4,
+        "failed": 0,
+        "success_rate": "100.0%",
+        "critical_findings": [],
+        "expert_notes": [
+          "All measurements within safety limits",
+          "Test completed successfully"
+        ]
+      }}
+    }}
+
+    IMPORTANT:
+    - Copy this structure exactly
+    - Replace placeholder values with actual data
+    - Keep all field names identical
+    - Do NOT add any text before or after the JSON
+    - Start your response with {{ and end with }}
     """
 
     return textwrap.dedent(prompt).strip()

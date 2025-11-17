@@ -3,23 +3,35 @@
 from __future__ import annotations
 
 import json
-import re
+import logging
 from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 
 try:  # pragma: no cover - prefer absolute imports under package execution
+    from backend.ai_response_handler import (
+        parse_ai_response_safely,
+        validate_analysis_response,
+    )
     from backend.config import AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY
     from backend.detailed_prompt_template import build_simplified_analysis_prompt
     from backend.structured_analyzer import build_structured_data_for_ai
 except ImportError:  # pragma: no cover - fallback for script execution
     try:
+        from .ai_response_handler import (  # type: ignore
+            parse_ai_response_safely,
+            validate_analysis_response,
+        )
         from .config import AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY  # type: ignore
         from .detailed_prompt_template import (  # type: ignore
             build_simplified_analysis_prompt,
         )
         from .structured_analyzer import build_structured_data_for_ai  # type: ignore
     except ImportError:  # pragma: no cover - running from repository root
+        from ai_response_handler import (  # type: ignore
+            parse_ai_response_safely,
+            validate_analysis_response,
+        )
         from config import AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY  # type: ignore
         from detailed_prompt_template import (  # type: ignore
             build_simplified_analysis_prompt,
@@ -39,6 +51,7 @@ except ImportError:  # pragma: no cover - fallback for script execution
 
 PREFERRED_OPENAI_MODELS = ("gpt-4-turbo-preview", "gpt-4")
 _client: OpenAI | None = None
+logger = logging.getLogger(__name__)
 
 
 def _get_client() -> OpenAI:
@@ -116,37 +129,6 @@ def _load_structured_metadata(
     return None
 
 
-def _strip_markdown_code_fences(text: str) -> str:
-    if not text:
-        return ""
-    cleaned = text.strip()
-    code_block_pattern = re.compile(r"^```[a-zA-Z0-9]*\s*(?P<inner>[\s\S]+?)\s*```$", re.IGNORECASE)
-    match = code_block_pattern.match(cleaned)
-    if match:
-        return match.group("inner").strip()
-    return cleaned
-
-
-def _parse_json_output(text: str) -> Optional[Dict[str, Any]]:
-    if not text:
-        return None
-    try:
-        loaded = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            snippet = text[start : end + 1]
-            try:
-                loaded = json.loads(snippet)
-            except json.JSONDecodeError:
-                return None
-        else:
-            return None
-
-    return loaded if isinstance(loaded, dict) else None
-
-
 def analyze_with_openai(text: str) -> Dict[str, Any]:
     """Generate a detailed JSON analysis for the provided PDF text via OpenAI."""
 
@@ -169,10 +151,24 @@ def analyze_with_openai(text: str) -> Dict[str, Any]:
 
     response = client.responses.create(
         model=model_name,
-        temperature=0.1,
+        temperature=0.0,
         max_output_tokens=4000,
         input=[
-            {"role": "system", "content": "SADECE JSON formatında yanıt ver"},
+            {
+                "role": "system",
+                "content": (
+                    "You are a test report analyzer. You MUST respond ONLY with valid JSON.\n\n"
+                    "CRITICAL RULES:\n"
+                    "- Response MUST start with {\n"
+                    "- Response MUST end with }\n"
+                    "- NO markdown code blocks\n"
+                    "- NO explanatory text before or after JSON\n"
+                    "- NO comments inside JSON\n"
+                    "- Use double quotes for strings\n"
+                    "- Ensure all brackets and braces are balanced\n\n"
+                    "If you cannot extract a value, use null instead of omitting the field."
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
     )
@@ -198,18 +194,13 @@ def analyze_with_openai(text: str) -> Dict[str, Any]:
             output_text = str(response)
 
     raw_text = (output_text or "").strip()
-    cleaned_text = _strip_markdown_code_fences(raw_text)
-    parsed_json = _parse_json_output(cleaned_text)
-    text_field = (
-        json.dumps(parsed_json, ensure_ascii=False)
-        if parsed_json is not None
-        else cleaned_text
-    )
+    parsed_data = parse_ai_response_safely(raw_text)
 
-    return {
-        "provider": "chatgpt",
-        "model": model_name,
-        "text": text_field,
-        "data": parsed_json,
-        "raw_response": raw_text,
-    }
+    if not validate_analysis_response(parsed_data):
+        logger.error("Invalid AI response: %s", parsed_data)
+        return {
+            "error": "AI returned invalid format",
+            "raw_response": raw_text[:500],
+        }
+
+    return parsed_data
