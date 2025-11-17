@@ -690,9 +690,16 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
                 page_2_text = page_texts[1]
                 logger.info("  Sayfa 2 metni uzunluğu: %s", len(page_2_text))
                 try:
-                    page_2_metadata = parse_page_2_metadata(page_2_text)
+                    page_2_metadata = parse_page_2_metadata(pdf_path_obj)
                 except Exception as exc:  # pragma: no cover - defensive logging
                     logger.warning("  Sayfa 2 metadatası çıkarılamadı: %s", exc)
+                    page_2_metadata = {}
+
+                if page_2_metadata.get("error"):
+                    logger.warning(
+                        "  Page-2 metadata çıkarılamadı (error=%s)",
+                        page_2_metadata["error"],
+                    )
                     page_2_metadata = {}
 
                 if page_2_metadata:
