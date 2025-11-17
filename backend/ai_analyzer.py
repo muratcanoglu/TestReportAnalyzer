@@ -15,10 +15,13 @@ from anthropic import Anthropic
 from openai import OpenAI
 from dotenv import load_dotenv
 
-try:  # pragma: no cover - allow running as script
-    from .structured_data_parser import format_structured_data_for_ai
-except ImportError:  # pragma: no cover
-    from structured_data_parser import format_structured_data_for_ai  # type: ignore
+try:  # pragma: no cover - prefer absolute imports within package context
+    from backend.structured_data_parser import format_structured_data_for_ai
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .structured_data_parser import format_structured_data_for_ai  # type: ignore
+    except ImportError:  # pragma: no cover - running from repository root
+        from structured_data_parser import format_structured_data_for_ai  # type: ignore
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 

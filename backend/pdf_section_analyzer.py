@@ -7,10 +7,13 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 
-try:  # pragma: no cover - allow running as a script without a package context
-    from .section_patterns import SECTION_PATTERNS
-except ImportError:  # pragma: no cover
-    from section_patterns import SECTION_PATTERNS  # type: ignore
+try:  # pragma: no cover - prefer absolute imports when packaged
+    from backend.section_patterns import SECTION_PATTERNS
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .section_patterns import SECTION_PATTERNS  # type: ignore
+    except ImportError:  # pragma: no cover - running from repository root
+        from section_patterns import SECTION_PATTERNS  # type: ignore
 
 
 SUBSECTION_PATTERNS: Dict[str, Dict[str, str]] = {

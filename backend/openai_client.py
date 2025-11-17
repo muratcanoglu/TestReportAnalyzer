@@ -6,15 +6,23 @@ from typing import Any, Dict
 
 from openai import OpenAI
 
-try:  # pragma: no cover - allow running without package context
-    from .config import AI_MAX_TOKENS, AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY
-except ImportError:  # pragma: no cover
-    from config import (  # type: ignore
-        AI_MAX_TOKENS,
-        AI_OPENAI_MODEL,
-        AI_TIMEOUT_S,
-        OPENAI_API_KEY,
-    )
+try:  # pragma: no cover - prefer absolute imports under package execution
+    from backend.config import AI_MAX_TOKENS, AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .config import (  # type: ignore
+            AI_MAX_TOKENS,
+            AI_OPENAI_MODEL,
+            AI_TIMEOUT_S,
+            OPENAI_API_KEY,
+        )
+    except ImportError:  # pragma: no cover - running from repository root
+        from config import (  # type: ignore
+            AI_MAX_TOKENS,
+            AI_OPENAI_MODEL,
+            AI_TIMEOUT_S,
+            OPENAI_API_KEY,
+        )
 
 _client: OpenAI | None = None
 

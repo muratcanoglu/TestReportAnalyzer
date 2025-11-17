@@ -5,10 +5,13 @@ from __future__ import annotations
 import re
 from typing import Dict
 
-try:  # pragma: no cover - support running as script
-    from .pdf_section_analyzer import detect_subsections, identify_section_language
-except ImportError:  # pragma: no cover
-    from pdf_section_analyzer import detect_subsections, identify_section_language  # type: ignore
+try:  # pragma: no cover - prefer package imports when available
+    from backend.pdf_section_analyzer import detect_subsections, identify_section_language
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .pdf_section_analyzer import detect_subsections, identify_section_language  # type: ignore
+    except ImportError:  # pragma: no cover - running from source tree directly
+        from pdf_section_analyzer import detect_subsections, identify_section_language  # type: ignore
 
 
 def _ensure_text_string(text_or_dict: object) -> str:
