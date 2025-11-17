@@ -736,9 +736,22 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
             for key, value in sections.items():
                 logger.info("      • %s: %s karakter", key, len(value) if value else 0)
 
-            logger.info("    - Measurement params: %s grup", len(measurement_params))
-            for param in measurement_params:
-                logger.info("      • %s: %s değer", param.get("name"), len(param.get("values", [])))
+            logger.info(
+                "    - Measurement params: %s kayıt", len(measurement_params)
+            )
+            for measurement in measurement_params[:10]:
+                value = measurement.get("value")
+                name = measurement.get("name")
+                unit = measurement.get("unit") or ""
+                raw = measurement.get("raw")
+                unit_display = f" {unit}" if unit else ""
+                logger.info(
+                    "      • %s = %s%s (raw=%s)",
+                    name,
+                    format(value, "g") if isinstance(value, float) else value,
+                    unit_display,
+                    raw,
+                )
         else:
             sections = detect_sections(text)
             measurement_params = []
@@ -790,7 +803,9 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
             combined_graph_text = (combined_graph_text + "\n\n" + ocr_text).strip()
 
         if measurement_params:
-            logger.info("    Measurement params var: %s grup", len(measurement_params))
+            logger.info(
+                "    Measurement params var: %s kayıt", len(measurement_params)
+            )
             logger.info("    Graph text: %s karakter", len(graph_text))
 
             analysis_graphs = analyze_graphs(

@@ -64,38 +64,25 @@ def test_extract_measurement_params_from_tables():
 
     params = extract_measurement_params("", tables=tables)
 
-    assert params == [
-        {
-            "name": "Baş ivmesi (a Kopf über 3 ms)",
-            "unit": "g",
-            "values": [58.15, 64.72],
-            "raw_values": ["58,15", "64,72"],
-        },
-        {
-            "name": "Göğüs ivmesi (ThAC)",
-            "unit": "g",
-            "values": [18.4, 18.27],
-            "raw_values": ["18,40", "18,27"],
-        },
-        {
-            "name": "Sağ femur kuvveti (FAC right)",
-            "unit": "kN",
-            "values": [4.4, 5.94],
-            "raw_values": ["4,40", "5,94"],
-        },
-        {
-            "name": "Sol femur kuvveti (FAC left)",
-            "unit": "kN",
-            "values": [4.82, 6.34],
-            "raw_values": ["4,82", "6,34"],
-        },
-        {
-            "name": "HAC (Head Acceleration Criterion)",
-            "unit": "",
-            "values": [161.18, 283.27],
-            "raw_values": ["161,18", "283,27"],
-        },
+    expected = [
+        ("Baş ivmesi (a Kopf über 3 ms)", "g", 58.15, "58,15"),
+        ("Baş ivmesi (a Kopf über 3 ms)", "g", 64.72, "64,72"),
+        ("Göğüs ivmesi (ThAC)", "g", 18.4, "18,40"),
+        ("Göğüs ivmesi (ThAC)", "g", 18.27, "18,27"),
+        ("Sağ femur kuvveti (FAC right)", "kN", 4.4, "4,40"),
+        ("Sağ femur kuvveti (FAC right)", "kN", 5.94, "5,94"),
+        ("Sol femur kuvveti (FAC left)", "kN", 4.82, "4,82"),
+        ("Sol femur kuvveti (FAC left)", "kN", 6.34, "6,34"),
+        ("HAC (Head Acceleration Criterion)", "", 161.18, "161,18"),
+        ("HAC (Head Acceleration Criterion)", "", 283.27, "283,27"),
     ]
+
+    assert len(params) == len(expected)
+    for measurement, (name, unit, value, raw) in zip(params, expected):
+        assert measurement["name"] == name
+        assert measurement["unit"] == unit
+        assert measurement["raw"] == raw
+        assert measurement["value"] == pytest.approx(value)
 
 
 def test_extract_measurement_params_from_text_supports_commas():
@@ -109,11 +96,18 @@ def test_extract_measurement_params_from_text_supports_commas():
 
     params = extract_measurement_params(text)
 
-    head = next(param for param in params if param["name"].startswith("Baş"))
-    assert head["values"] == pytest.approx([58.15])
-    thac = next(param for param in params if param["name"].startswith("Göğüs"))
-    assert thac["values"] == pytest.approx([18.4])
-    assert thac["raw_values"] == ["18,40"]
+    head_values = [
+        entry["value"]
+        for entry in params
+        if entry["name"].startswith("Baş")
+    ]
+    assert head_values == pytest.approx([58.15])
+
+    thac_entries = [
+        entry for entry in params if entry["name"].startswith("Göğüs")
+    ]
+    assert [entry["value"] for entry in thac_entries] == pytest.approx([18.4])
+    assert thac_entries[0]["raw"] == "18,40"
 
 
 def test_analyze_pdf_comprehensive_passes_measurement_params(monkeypatch: pytest.MonkeyPatch):
