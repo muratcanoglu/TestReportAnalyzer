@@ -1,9 +1,6 @@
 import axios from "axios";
 
-const isDebugEnabled =
-  String(process.env.REACT_APP_DEBUG || "")
-    .toLowerCase()
-    .trim() === "true";
+const isDebugEnabled = Boolean(process.env.REACT_APP_DEBUG);
 
 const debugLog = (...args) => {
   if (isDebugEnabled) {
@@ -17,16 +14,25 @@ const resolveBaseUrl = () => {
     return envBaseUrl;
   }
 
-  const { hostname, origin } = window.location;
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
+  const hostname = window.location.hostname;
+  const isDevelopment = process.env.NODE_ENV === "development";
+  const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
+
+  if (isDevelopment || isLocalHost) {
     return "http://localhost:5000/api";
   }
 
-  return `${origin.replace(/\/$/, "")}/api`;
+  return "/api";
 };
 
 const API_BASE = resolveBaseUrl();
 debugLog(`Using API base URL: ${API_BASE}`);
+
+if (isDebugEnabled) {
+  console.debug("[API Config] Base URL:", API_BASE);
+  console.debug("[API Config] NODE_ENV:", process.env.NODE_ENV);
+  console.debug("[API Config] Hostname:", window.location.hostname);
+}
 
 const client = axios.create({
   baseURL: API_BASE,
