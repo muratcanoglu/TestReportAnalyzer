@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Dict
 
 import pytest
 
@@ -9,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.parsers.kielt_parser import parse_page_2_metadata
+from backend.parsers.kielt_parser import _parse_page_2_text, parse_page_2_metadata
 from backend.pdf_analyzer import analyze_pdf_comprehensive
 import backend.pdf_analyzer as _pdf_analyzer_module
 import backend.pdf_format_detector as _pdf_format_detector_module
@@ -66,7 +67,7 @@ def sample_page2_text() -> str:
 
 
 def test_parse_page2_metadata(sample_page2_text: str):
-    metadata = parse_page_2_metadata(sample_page2_text)
+    metadata = _parse_page_2_text(sample_page2_text)
 
     expected_simple_fields = {
         "auftraggeber": "Metrobus GmbH",
@@ -155,7 +156,7 @@ def test_analyze_pdf_attaches_page2_metadata(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(pdf_module, "extract_measurement_params", lambda *_args, **_kwargs: [])
 
     monkeypatch.setattr(
-        "backend.pdf_analyzer.parse_page_2_metadata", lambda _text: fake_metadata
+        "backend.pdf_analyzer.parse_page_2_metadata", lambda _path: fake_metadata
     )
 
     monkeypatch.setattr(
@@ -184,3 +185,66 @@ def test_analyze_pdf_attaches_page2_metadata(monkeypatch: pytest.MonkeyPatch):
     result = analyze_pdf_comprehensive("dummy.pdf")
 
     assert result["structured_data"].get("page_2_metadata") == fake_metadata
+
+
+def test_parse_page_2_metadata_uses_pdfplumber(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sample_page2_text: str
+):
+    fake_pdf_closed = {"value": False}
+
+    class _FakePage:
+        def __init__(self, text: str):
+            self._text = text
+
+        def extract_text(self) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, text: str):
+            self.pages = [None, _FakePage(text)]
+
+        def close(self) -> None:
+            fake_pdf_closed["value"] = True
+
+    def _fake_pdfplumber_open(path: Path) -> _FakePdf:
+        assert Path(path) == pdf_path
+        return _FakePdf(sample_page2_text)
+
+    captured: Dict[str, str] = {}
+
+    def _fake_parser(text: str) -> Dict[str, object]:
+        captured["text"] = text
+        return {"ok": True}
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"")
+
+    monkeypatch.setattr("backend.parsers.kielt_parser.pdfplumber.open", _fake_pdfplumber_open)
+    monkeypatch.setattr("backend.parsers.kielt_parser._parse_page_2_text", _fake_parser)
+
+    result = parse_page_2_metadata(pdf_path)
+
+    assert result == {"ok": True}
+    assert captured["text"] == sample_page2_text
+    assert fake_pdf_closed["value"] is True
+
+
+def test_parse_page_2_metadata_returns_error_when_extraction_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    pdf_path = tmp_path / "missing.pdf"
+    pdf_path.write_bytes(b"")
+
+    def _failing_pdfplumber_open(_path):
+        raise RuntimeError("pdfplumber boom")
+
+    class _FailingReader:
+        def __init__(self, _path: str):
+            raise RuntimeError("pypdf boom")
+
+    monkeypatch.setattr("backend.parsers.kielt_parser.pdfplumber.open", _failing_pdfplumber_open)
+    monkeypatch.setattr("backend.parsers.kielt_parser.PdfReader", _FailingReader)
+
+    result = parse_page_2_metadata(pdf_path)
+
+    assert result == {"error": "pypdf boom"}

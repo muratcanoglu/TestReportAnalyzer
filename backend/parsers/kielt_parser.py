@@ -1,9 +1,13 @@
 """Helpers for extracting Kielt/TÜV-specific metadata blocks."""
 from __future__ import annotations
 
+from pathlib import Path
 import logging
 import re
 from typing import Dict, Iterable, List, Mapping, Optional
+
+import pdfplumber
+from PyPDF2 import PdfReader
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +309,7 @@ def extract_lehnen_winkel_table(text: str) -> Dict[str, Dict[str, Optional[float
     return table
 
 
-def parse_page_2_metadata(page_text: str) -> Dict[str, object]:
+def _parse_page_2_text(page_text: str) -> Dict[str, object]:
     """Parse all known metadata from page 2 of the Kielt format."""
 
     metadata: Dict[str, object] = {}
@@ -322,6 +326,51 @@ def parse_page_2_metadata(page_text: str) -> Dict[str, object]:
     metadata["lehnen_winkel_table"] = extract_lehnen_winkel_table(page_text)
     metadata["raw_page_text"] = page_text.strip()
     return metadata
+
+
+def parse_page_2_metadata(pdf_path: Path | str) -> Dict[str, object]:
+    """Read the PDF and parse metadata found on page 2.
+
+    The function first attempts to extract the raw text using ``pdfplumber`` and
+    falls back to ``PyPDF2`` if needed. Any exception is logged and returned as
+    part of the response to align with the Phase 2.3 specification.
+    """
+
+    pdf_path_obj = Path(pdf_path)
+
+    pdf_handle: Optional[pdfplumber.PDF] = None
+    try:
+        pdf_handle = pdfplumber.open(pdf_path_obj)
+        if len(pdf_handle.pages) < 2:
+            raise ValueError("PDF contains fewer than 2 pages")
+        page_text = pdf_handle.pages[1].extract_text() or ""
+        if not page_text.strip():
+            raise ValueError("Page 2 text is empty")
+        return _parse_page_2_text(page_text)
+    except Exception as plumber_exc:  # pragma: no cover - logging only
+        logger.warning(
+            "parse_page_2_metadata(pdfplumber) failed for %s: %s",
+            pdf_path_obj,
+            plumber_exc,
+        )
+    finally:
+        if pdf_handle is not None:
+            try:
+                pdf_handle.close()
+            except Exception:  # pragma: no cover - defensive close
+                logger.debug("Failed to close pdfplumber handle for %s", pdf_path_obj)
+
+    try:
+        reader = PdfReader(str(pdf_path_obj))
+        if len(reader.pages) < 2:
+            raise ValueError("PDF contains fewer than 2 pages")
+        page_text = reader.pages[1].extract_text() or ""
+        if not page_text.strip():
+            raise ValueError("Page 2 text is empty")
+        return _parse_page_2_text(page_text)
+    except Exception as exc:
+        logger.exception("parse_page_2_metadata failed for %s", pdf_path_obj)
+        return {"error": str(exc)}
 
 
 __all__ = [
