@@ -455,14 +455,55 @@ class AIAnalyzer:
         def _or_na(text: str) -> str:
             return text if text else "N/A"
 
+        def _first_non_empty_text(values: Sequence[object]) -> str:
+            for raw_value in values:
+                text_value = _to_text(raw_value)
+                if text_value:
+                    return text_value
+            return ""
+
         page_2_metadata: Dict[str, object] = {}
+        metadata_status = ""
+        metadata_error = ""
         if isinstance(structured_data, dict):
             candidate = structured_data.get("page_2_metadata", {})
             if isinstance(candidate, dict):
-                page_2_metadata = candidate
+                metadata_status = _to_text(candidate.get("status"))
+                metadata_error = _to_text(candidate.get("error"))
+                non_status_payload_exists = any(
+                    key not in {"status", "error"}
+                    for key in candidate.keys()
+                )
+                if metadata_status and not non_status_payload_exists:
+                    page_2_metadata = {}
+                else:
+                    page_2_metadata = candidate
 
         customer_info = _or_na(_to_text(page_2_metadata.get("auftraggeber")))
         participants = _or_na(_to_text(page_2_metadata.get("anwesende")))
+
+        test_file_id_candidates: List[object] = []
+        if isinstance(page_2_metadata, dict):
+            test_file_id_candidates.extend(
+                page_2_metadata.get(key)
+                for key in (
+                    "test_file_id",
+                    "pruefbericht_nr",
+                    "aktenzeichen",
+                    "testbericht",
+                )
+            )
+        if isinstance(structured_data, dict):
+            test_file_id_candidates.extend(
+                structured_data.get(key)
+                for key in (
+                    "test_file_id",
+                    "report_id",
+                    "document_id",
+                )
+            )
+        test_file_id_candidates.append(filename)
+        test_file_id = _or_na(_first_non_empty_text(test_file_id_candidates))
 
         condition_parts: List[str] = []
         for label, key in [
@@ -475,7 +516,7 @@ class AIAnalyzer:
             value = _to_text(page_2_metadata.get(key))
             if value:
                 condition_parts.append(f"{label}: {value}")
-        test_conditions_page2 = _or_na(" | ".join(condition_parts))
+        test_conditions = _or_na(" | ".join(condition_parts))
 
         pruefling = page_2_metadata.get("pruefling") if isinstance(page_2_metadata, dict) else None
         pruefling = pruefling if isinstance(pruefling, dict) else {}
@@ -546,16 +587,37 @@ class AIAnalyzer:
                     angles_parts.append(f"{row_label.title()}: {', '.join(row_values)}")
         backrest_angles = _or_na(" | ".join(angles_parts))
 
+        angle_delta_parts: List[str] = []
+        if isinstance(lehnen_table, dict):
+            before_angles = lehnen_table.get("vorher") if isinstance(lehnen_table, dict) else None
+            after_angles = lehnen_table.get("nachher") if isinstance(lehnen_table, dict) else None
+            if isinstance(before_angles, dict) and isinstance(after_angles, dict):
+                for pos in ("hinten_links", "hinten_rechts", "vorne_links", "vorne_rechts"):
+                    before_value = before_angles.get(pos)
+                    after_value = after_angles.get(pos)
+                    if isinstance(before_value, (int, float)) and isinstance(after_value, (int, float)):
+                        delta = after_value - before_value
+                        pretty_pos = pos.replace("_", " ").title()
+                        angle_delta_parts.append(
+                            f"{pretty_pos}: Δ {delta:+.2f}° (before {before_value:g}°, after {after_value:g}°)"
+                        )
+        backrest_angle_deltas = _or_na(" | ".join(angle_delta_parts))
+
         if page_2_metadata:
             logger.info(
-                "Page-2 metadata summary hazırlandı (customer=%s, participants=%s, verdict=%s, angles=%s)",
+                "Page-2 metadata summary hazırlandı (customer=%s, participants=%s, verdict=%s, angles=%s, file_id=%s)",
                 customer_info,
                 participants,
                 test_results_summary,
                 backrest_angles,
+                test_file_id,
             )
         else:
-            logger.info("Page-2 metadata bulunamadı, özet oluşturulamadı")
+            logger.info(
+                "Page-2 metadata bulunamadı veya işaretlendi (status=%s, error=%s)",
+                metadata_status or "n/a",
+                metadata_error or "",
+            )
 
         failure_lines: List[str] = []
         for failure in failure_details:
@@ -569,25 +631,51 @@ class AIAnalyzer:
 
         failure_block = "\n".join(failure_lines) if failure_lines else "(başarısız test bulunmuyor)"
 
+        json_structure_example = textwrap.dedent(
+            """
+            {
+              "localized_summaries": {
+                "tr": {"summary": "...", "conditions": "...", "improvements": "...", "labels": {"summary": "Genel Özet", "conditions": "Test Koşulları", "improvements": "İyileştirme Önerileri"}},
+                "en": {"summary": "...", "conditions": "...", "improvements": "...", "labels": {"summary": "Summary", "conditions": "Test Conditions", "improvements": "Improvement Suggestions"}},
+                "de": {"summary": "...", "conditions": "...", "improvements": "...", "labels": {"summary": "Zusammenfassung", "conditions": "Testbedingungen", "improvements": "Verbesserungsvorschläge"}}
+              },
+              "sections": {
+                "graphs": "Grafik ve görsel anlatımların özeti",
+                "conditions": "Test kurulumları ve çevresel koşullar",
+                "results": "Önemli ölçüm sonuçları",
+                "comments": "Uzman görüşü veya değerlendirilen yorumlar"
+              },
+              "highlights": ["En fazla 5 kısa maddelik önemli bulgular listesi"]
+            }
+            """
+        ).strip()
+
         prompt = f"""
 PDF test raporunu analiz eden uzman bir mühendis olarak hareket et. Rapor dosya adı: {filename}. Test türü: {report_type}.
 Toplam test sayısı: {total_tests}. Başarılı test sayısı: {passed_tests}. Başarısız test sayısı: {failed_tests}.
 Başarısız testlerin özet listesi:
 {failure_block}
 
-Test Report Details (Page 2):
-- Customer / Auftraggeber: {customer_info}
-- Participants / Anwesende: {participants}
-- Test & Measurement Conditions: {test_conditions_page2}
-- Test Sample (Prüfling) Info: {test_sample_info}
-- Prüfergebnis Summary: {test_results_summary}
-- Lehnen/Winkel Backrest Angles: {backrest_angles}
+## TEST REPORT METADATA (Page 2)
+### Customer / Auftraggeber
+{customer_info}
+### Participants / Anwesende
+{participants}
+### Test File Identifier
+{test_file_id}
+### Test & Measurement Conditions
+{test_conditions}
+### Test Sample (Prüfling)
+{test_sample_info}
+### Prüfergebnis Summary
+{test_results_summary}
+### Lehnen/Winkel Backrest Angles
+{backrest_angles}
+### Angle Delta Observations
+{backrest_angle_deltas}
 
-Rapor metninden çıkarılmış içerik (görsel ve tablo açıklamaları dahil olabilir):
-"""
-
-        prompt += excerpt
-        prompt += """
+## SOURCE EXCERPT
+{excerpt}
 
 GÖREV:
 - Metni dikkatlice incele; grafikler, ölçüm koşulları, kullanılan standartlar, sonuçlar ve uzman yorumları gibi öğeleri ayrıntılı biçimde değerlendir.
@@ -595,27 +683,16 @@ GÖREV:
 - Her dil için summary/conditions/improvements alanlarına ek olarak "labels" nesnesi üret ve bu nesnede ilgili başlıkları (ör. "Test Koşulları", "Test Conditions", "Testbedingungen") o dilde ver.
 - "sections" alanında grafikler, test kurulumları, ölçüm sonuçları ve yorumlara dair teknik özeti ayrıntılı doldur.
 - Aşağıdaki yapıyı kullan:
-{
-  "localized_summaries": {
-    "tr": {"summary": "...", "conditions": "...", "improvements": "...", "labels": {"summary": "Genel Özet", "conditions": "Test Koşulları", "improvements": "İyileştirme Önerileri"}},
-    "en": {"summary": "...", "conditions": "...", "improvements": "...", "labels": {"summary": "Summary", "conditions": "Test Conditions", "improvements": "Improvement Suggestions"}},
-    "de": {"summary": "...", "conditions": "...", "improvements": "...", "labels": {"summary": "Zusammenfassung", "conditions": "Testbedingungen", "improvements": "Verbesserungsvorschläge"}}
-  },
-  "sections": {
-    "graphs": "Grafik ve görsel anlatımların özeti",
-    "conditions": "Test kurulumları ve çevresel koşullar",
-    "results": "Önemli ölçüm sonuçları",
-    "comments": "Uzman görüşü veya değerlendirilen yorumlar"
-  },
-  "highlights": ["En fazla 5 kısa maddelik önemli bulgular listesi"]
-}
+{json_structure_example}
 
 Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
-ANALYSIS REQUIREMENTS:
-- Prüfergebnis hükümlerini değerlendir ve PASS/FAIL bağlamını açıkla: {test_results_summary}
-- Lehnen/Winkel tablosundaki açı değişimlerini karşılaştır ve yorumla: {backrest_angles}
-- Auftraggeber ve katılımcı bilgilerini kullanarak müşteri beklentilerini analiz et: {customer_info} / {participants}
-- Test ve ölçüm koşullarının standartlara uyumunu doğrula: {test_conditions_page2}
+## ANALYSIS REQUIREMENTS
+- Customer context: Auftraggeber ({customer_info}), katılımcılar ({participants}) ve test dosya kimliği ({test_file_id}) üzerinden müşteri beklentilerini açıkla.
+- Prüfergebnis verdicts: {test_results_summary} verisini kullanarak PASS/FAIL kararını ve serbest bırakma koşullarını yorumla.
+- Structural assessment: {backrest_angles} ve açı delta hesapları ({backrest_angle_deltas}) ile ön/arka sırtlık davranışını değerlendir.
+- Configuration notes: Test koşulları ({test_conditions}) ve Prüfling bilgileri ({test_sample_info}) üzerinden montaj ve ölçüm düzeneklerini belgeleyerek önemli ayarları belirt.
+- Compliance summary: Standart/referans vurgularını {test_conditions} içinden çekerek mevzuata uyumu doğrula.
+- Actionable recommendations: Başarısız test listesine ({failure_block}) referans vererek müşteri için uygulanabilir düzeltici aksiyonlar çıkar.
 - Ölçümler ve çıkarımlara dayanarak nihai PASS/FAIL yargısı ver.
 """
 
