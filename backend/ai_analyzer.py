@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import textwrap
+from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -1062,7 +1063,7 @@ def analyze_graphs(
     measurement_params = list(measurement_params or [])
 
     if measurement_params:
-        logger.info("Measurement params bulundu: %s grup", len(measurement_params))
+        logger.info("Measurement params bulundu: %s kayıt", len(measurement_params))
 
         formatted_params = format_measurement_params_for_ai(measurement_params)
 
@@ -1116,24 +1117,44 @@ SADECE ÖZETİ YAZ!
         return "Grafik veya ölçüm verisi bulunamadı."
 
 
+def _group_measurement_entries(
+    params: Sequence[Dict[str, object]]
+) -> OrderedDict[Tuple[str, str], List[Dict[str, object]]]:
+    grouped: OrderedDict[Tuple[str, str], List[Dict[str, object]]] = OrderedDict()
+    for entry in params:
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        unit = (entry.get("unit") or "").strip()
+        value = entry.get("value")
+        if value is None:
+            continue
+
+        key = (name, unit)
+        grouped.setdefault(key, []).append(entry)
+
+    return grouped
+
+
 def _format_params_fallback(params: Sequence[Dict[str, object]]) -> str:
     """Fallback: Parametreleri basit formatta göster"""
 
-    if not params:
+    grouped = _group_measurement_entries(params)
+    if not grouped:
         return "Ölçüm parametreleri tespit edilemedi."
 
     lines: List[str] = []
-    for param in params:
-        name = param.get("name", "Parametre")
-        unit = param.get("unit", "")
-        values = list(param.get("values") or [])[:3]
-        values_str = ", ".join(
-            format(v, "g") if isinstance(v, float) else str(v) for v in values
-        )
+    for (name, unit), entries in grouped.items():
+        preview_values = [
+            entry.get("value")
+            for entry in entries[:3]
+            if entry.get("value") is not None
+        ]
+        formatted = ", ".join(format(float(value), "g") for value in preview_values)
         if unit:
-            lines.append(f"{name}: {values_str} {unit}")
+            lines.append(f"{name}: {formatted} {unit}")
         else:
-            lines.append(f"{name}: {values_str}")
+            lines.append(f"{name}: {formatted}")
 
     return "Tespit edilen ölçümler:\n" + "\n".join(lines)
 
@@ -1235,18 +1256,21 @@ def _extract_graph_info_enhanced(
     """Gelişmiş fallback - measurement params kullan"""
 
     measurement_params = list(measurement_params or [])
-    if measurement_params:
+    grouped = _group_measurement_entries(measurement_params)
+    if grouped:
+        total_entries = sum(len(entries) for entries in grouped.values())
         parts: List[str] = []
-        parts.append(f"{len(measurement_params)} ölçüm parametresi tespit edildi:")
-        for param in measurement_params[:5]:
-            name = param.get("name", "Parametre")
-            unit = param.get("unit", "")
-            values = param.get("values") or []
-            values_preview = ", ".join(str(v) for v in values[:3])
+        parts.append(f"{total_entries} ölçüm kaydı tespit edildi:")
+        for (name, unit), entries in list(grouped.items())[:5]:
+            preview = ", ".join(
+                format(float(entry.get("value")), "g")
+                for entry in entries[:3]
+                if entry.get("value") is not None
+            )
             if unit:
-                parts.append(f"- {name}: {values_preview} {unit}")
+                parts.append(f"- {name}: {preview} {unit}")
             else:
-                parts.append(f"- {name}: {values_preview}")
+                parts.append(f"- {name}: {preview}")
         return " ".join(parts)
 
     tables_found = re.findall(r"=== SAYFA \d+ - TABLO \d+ ===", content or "")

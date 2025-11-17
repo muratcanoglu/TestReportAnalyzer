@@ -41,11 +41,12 @@ for key, value in sections.items():
 # 3. Measurement params
 print("\n[3] Measurement Params")
 params = extract_measurement_params(pdf_text)
-print(f"Toplam {len(params)} parametre grubu bulundu:")
+print(f"Toplam {len(params)} ölçüm kaydı bulundu:")
 
 for param in params:
-    print(f"\n  {param['name']} [{param['unit']}]:")
-    print(f"    Değerler: {param['values']}")
+    print(
+        f"\n  {param['name']} [{param['unit']}]: {param['value']} (raw={param['raw']})"
+    )
 
 # Kontrol
 print("\n" + "="*70)
@@ -60,11 +61,11 @@ expected_params = [
     'HAC'
 ]
 
-found_params = [p['name'] for p in params]
+found_params = sorted({p['name'] for p in params})
 print(f"\nBeklenen: {expected_params}")
 print(f"Bulunan: {found_params}")
 
-if len(params) >= 4:
+if all(name in found_params for name in expected_params):
     print("\n✓ TEST BAŞARILI - Measurement params bulundu!")
 else:
     print("\n✗ TEST BAŞARISIZ - Yeterli parametre bulunamadı!")

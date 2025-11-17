@@ -131,6 +131,7 @@ _MEASUREMENT_NAME_MAP: Dict[str, Tuple[str, str]] = {
 }
 
 _NUMBER_PATTERN = re.compile(r"[-+]?[0-9][0-9.,]*")
+_VALUE_CAPTURE_PATTERN = r"([-+]?[0-9][0-9.,]*)"
 
 
 def normalize_decimal(value: object) -> Optional[float]:
@@ -200,60 +201,73 @@ def extract_measurement_params(
         ThAC [g] 18.4
         FAC right F [kN] 4.40
     """
-    params_map: "OrderedDict[Tuple[str, str], Dict[str, List[object]]]" = OrderedDict()
+    measurements: List[Dict[str, object]] = []
 
     def _add_param(name: str, unit: str, values: Iterable[str]) -> None:
         name = (name or "").strip()
         unit = (unit or "").strip()
         if not name:
             return
+
         values_list = [str(value).strip() for value in values if str(value).strip()]
         if not values_list:
             return
 
-        key = (name, unit)
-        if key not in params_map:
-            params_map[key] = {"values": [], "raw_values": []}
-
-        entry = params_map[key]
         for raw_value in values_list:
             normalized = normalize_decimal(raw_value)
             if normalized is None:
+                logger.warning(
+                    "Measurement %s değeri normalize edilemedi: %r", name, raw_value
+                )
                 continue
-            if normalized not in entry["values"]:
-                entry["values"].append(normalized)
-                entry["raw_values"].append(raw_value)
+
+            measurement = {
+                "name": name,
+                "unit": unit,
+                "value": normalized,
+                "raw": raw_value,
+            }
+            measurements.append(measurement)
+
+            unit_display = f" {unit}" if unit else ""
+            logger.debug(
+                "Parsed measurement %s = %s%s (raw=%s)",
+                name,
+                format(normalized, "g"),
+                unit_display,
+                raw_value,
+            )
 
     # Pattern 1: "a Kopf über 3 ms [g] 58.15"
-    kopf_pattern = r"a\s+Kopf\s+über\s+3\s*ms\s*\[g\]\s*([\d,\.]+)"
+    kopf_pattern = rf"a\s+Kopf\s+über\s+3\s*ms\s*\[g\]\s*{_VALUE_CAPTURE_PATTERN}"
     kopf_matches = re.findall(kopf_pattern, text, re.IGNORECASE)
     if kopf_matches:
         _add_param("Baş ivmesi (a Kopf über 3 ms)", "g", kopf_matches)
         logger.info("Kopf değerleri bulundu: %s", kopf_matches)
 
     # Pattern 2: "ThAC [g] 18.4"
-    thac_pattern = r"ThAC\s*\[g\]\s*([\d,\.]+)"
+    thac_pattern = rf"ThAC\s*\[g\]\s*{_VALUE_CAPTURE_PATTERN}"
     thac_matches = re.findall(thac_pattern, text, re.IGNORECASE)
     if thac_matches:
         _add_param("Göğüs ivmesi (ThAC)", "g", thac_matches)
         logger.info("ThAC değerleri bulundu: %s", thac_matches)
 
     # Pattern 3: "FAC right F [kN] 4.40"
-    fac_right_pattern = r"FAC\s+right\s+F\s*\[kN\]\s*([\d,\.]+)"
+    fac_right_pattern = rf"FAC\s+right\s+F\s*\[kN\]\s*{_VALUE_CAPTURE_PATTERN}"
     fac_right_matches = re.findall(fac_right_pattern, text, re.IGNORECASE)
     if fac_right_matches:
         _add_param("Sağ femur kuvveti (FAC right)", "kN", fac_right_matches)
         logger.info("FAC right değerleri bulundu: %s", fac_right_matches)
 
     # Pattern 4: "FAC left F [kN] 4.82"
-    fac_left_pattern = r"FAC\s+left\s+F\s*\[kN\]\s*([\d,\.]+)"
+    fac_left_pattern = rf"FAC\s+left\s+F\s*\[kN\]\s*{_VALUE_CAPTURE_PATTERN}"
     fac_left_matches = re.findall(fac_left_pattern, text, re.IGNORECASE)
     if fac_left_matches:
         _add_param("Sol femur kuvveti (FAC left)", "kN", fac_left_matches)
         logger.info("FAC left değerleri bulundu: %s", fac_left_matches)
 
     # Pattern 5: "HAC, [120.1, 146.05 ms] 161.18"
-    hac_pattern = r"HAC,\s*\[[\d,\.]+,\s*[\d,\.]+\s*ms\]\s*([\d,\.]+)"
+    hac_pattern = rf"HAC,\s*\[(?:[-+]?[0-9][0-9.,]*),\s*(?:[-+]?[0-9][0-9.,]*)\s*ms\]\s*{_VALUE_CAPTURE_PATTERN}"
     hac_matches = re.findall(hac_pattern, text, re.IGNORECASE)
     if hac_matches:
         _add_param("HAC (Head Acceleration Criterion)", "", hac_matches)
@@ -263,18 +277,8 @@ def extract_measurement_params(
     for param in table_params:
         _add_param(param["name"], param["unit"], param["values"])
 
-    params = [
-        {
-            "name": name,
-            "unit": unit,
-            "values": entry["values"],
-            "raw_values": entry["raw_values"],
-        }
-        for (name, unit), entry in params_map.items()
-    ]
-
-    logger.info("Toplam %s parametre grubu bulundu", len(params))
-    return params
+    logger.info("Toplam %s ölçüm kaydı bulundu", len(measurements))
+    return measurements
 
 
 def _extract_params_from_tables(
@@ -457,29 +461,42 @@ def _stringify_value(value: object) -> str:
 
 
 def format_measurement_params_for_ai(params):
-    """
-    Measurement params'ı AI için okunabilir formata çevir
-    """
+    """Group measurement entries for AI-friendly output."""
+
     if not params:
+        return ""
+
+    grouped: "OrderedDict[Tuple[str, str], List[float]]" = OrderedDict()
+    for entry in params:
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        unit = (entry.get("unit") or "").strip()
+        value = entry.get("value")
+        if value is None:
+            continue
+
+        key = (name, unit)
+        grouped.setdefault(key, []).append(float(value))
+
+    if not grouped:
         return ""
 
     lines = ["=== ÖLÇÜM PARAMETRELERİ ===\n"]
 
-    for param in params:
-        name = param["name"]
-        unit = param["unit"]
-        values = param["values"]
+    for (name, unit), values in grouped.items():
         formatted_values = [_stringify_value(value) for value in values]
+        unit_display = f" {unit}" if unit else ""
 
         if len(formatted_values) == 1:
-            lines.append(f"• {name}: {formatted_values[0]} {unit}")
+            lines.append(f"• {name}: {formatted_values[0]}{unit_display}")
         elif len(formatted_values) == 2:
             lines.append(
-                f"• {name}: {formatted_values[0]} {unit} ve {formatted_values[1]} {unit}"
+                f"• {name}: {formatted_values[0]}{unit_display} ve {formatted_values[1]}{unit_display}"
             )
         else:
             values_str = ", ".join(formatted_values[:3])
-            lines.append(f"• {name}: {values_str} {unit}")
+            lines.append(f"• {name}: {values_str}{unit_display}")
 
     return "\n".join(lines)
 
