@@ -12,44 +12,69 @@ from tempfile import NamedTemporaryFile
 from flask import Blueprint, current_app, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
-try:  # pragma: no cover - import flexibility
-    from .. import database
-    from ..database import (
-        insert_report,
-        insert_test_result,
-        report_exists_with_filename,
-        update_report_comprehensive_analysis,
-        update_report_stats,
-    )
-    from ..ai_analyzer import ai_analyzer
-    from ..translation_utils import fallback_translate_text
-    from ..pdf_analyzer import (
-        REPORT_TYPE_LABELS,
-        analyze_pdf_comprehensive,
-        extract_text_from_pdf,
-        infer_report_type,
-        parse_test_results,
-    )
-except ImportError:  # pragma: no cover
-    import database  # type: ignore
-    from database import (  # type: ignore
-        insert_report,
-        insert_test_result,
-        report_exists_with_filename,
-        update_report_comprehensive_analysis,
-        update_report_stats,
-    )
-    from ai_analyzer import ai_analyzer  # type: ignore
-    from translation_utils import fallback_translate_text  # type: ignore
-    from pdf_analyzer import (  # type: ignore
-        REPORT_TYPE_LABELS,
-        analyze_pdf_comprehensive,
-        extract_text_from_pdf,
-        infer_report_type,
-        parse_test_results,
-    )
-
 logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - prefer absolute imports
+    from backend import database
+    from backend.database import (
+        insert_report,
+        insert_test_result,
+        report_exists_with_filename,
+        update_report_comprehensive_analysis,
+        update_report_stats,
+    )
+    from backend.ai_analyzer import ai_analyzer
+    from backend.translation_utils import fallback_translate_text
+    from backend.pdf_analyzer import (
+        REPORT_TYPE_LABELS,
+        analyze_pdf_comprehensive,
+        extract_text_from_pdf,
+        infer_report_type,
+        parse_test_results,
+    )
+except ImportError:  # pragma: no cover - fallback for script execution
+    logger.warning(
+        "backend.routes falling back to relative imports for critical dependencies",
+    )
+    try:
+        from .. import database  # type: ignore
+        from ..database import (  # type: ignore
+            insert_report,
+            insert_test_result,
+            report_exists_with_filename,
+            update_report_comprehensive_analysis,
+            update_report_stats,
+        )
+        from ..ai_analyzer import ai_analyzer  # type: ignore
+        from ..translation_utils import fallback_translate_text  # type: ignore
+        from ..pdf_analyzer import (  # type: ignore
+            REPORT_TYPE_LABELS,
+            analyze_pdf_comprehensive,
+            extract_text_from_pdf,
+            infer_report_type,
+            parse_test_results,
+        )
+    except ImportError:  # pragma: no cover - running from repository root
+        logger.warning(
+            "backend.routes using local import paths; ensure PYTHONPATH includes project root.",
+        )
+        import database  # type: ignore
+        from database import (  # type: ignore
+            insert_report,
+            insert_test_result,
+            report_exists_with_filename,
+            update_report_comprehensive_analysis,
+            update_report_stats,
+        )
+        from ai_analyzer import ai_analyzer  # type: ignore
+        from translation_utils import fallback_translate_text  # type: ignore
+        from pdf_analyzer import (  # type: ignore
+            REPORT_TYPE_LABELS,
+            analyze_pdf_comprehensive,
+            extract_text_from_pdf,
+            infer_report_type,
+            parse_test_results,
+        )
 
 reports_bp = Blueprint("reports", __name__)
 bp = reports_bp

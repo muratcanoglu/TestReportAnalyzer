@@ -6,20 +6,28 @@ from typing import Any, Dict
 
 from anthropic import Anthropic
 
-try:  # pragma: no cover - allow script execution
-    from .config import (
+try:  # pragma: no cover - prefer absolute imports in package context
+    from backend.config import (
         AI_ANTHROPIC_MODEL,
         AI_MAX_TOKENS,
         AI_TIMEOUT_S,
         ANTHROPIC_API_KEY,
     )
-except ImportError:  # pragma: no cover
-    from config import (  # type: ignore
-        AI_ANTHROPIC_MODEL,
-        AI_MAX_TOKENS,
-        AI_TIMEOUT_S,
-        ANTHROPIC_API_KEY,
-    )
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .config import (  # type: ignore
+            AI_ANTHROPIC_MODEL,
+            AI_MAX_TOKENS,
+            AI_TIMEOUT_S,
+            ANTHROPIC_API_KEY,
+        )
+    except ImportError:  # pragma: no cover - running from repository root
+        from config import (  # type: ignore
+            AI_ANTHROPIC_MODEL,
+            AI_MAX_TOKENS,
+            AI_TIMEOUT_S,
+            ANTHROPIC_API_KEY,
+        )
 
 _client: Anthropic | None = None
 

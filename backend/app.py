@@ -21,14 +21,23 @@ logger = logging.getLogger(__name__)
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-try:  # pragma: no cover - import resolution for script execution
-    from .database import init_db
-    from .routes import reports_bp
-    from .routes.ai import bp as ai_bp
-except ImportError:  # pragma: no cover
-    from database import init_db  # type: ignore
-    from routes import reports_bp  # type: ignore
-    from routes.ai import bp as ai_bp  # type: ignore
+try:  # pragma: no cover - prefer absolute imports
+    from backend.database import init_db
+    from backend.routes import reports_bp
+    from backend.routes.ai import bp as ai_bp
+except ImportError:  # pragma: no cover - fallback for script execution
+    logger.warning("backend.app falling back to relative imports for Flask setup")
+    try:
+        from .database import init_db  # type: ignore
+        from .routes import reports_bp  # type: ignore
+        from .routes.ai import bp as ai_bp  # type: ignore
+    except ImportError:  # pragma: no cover - running from repository root
+        logger.warning(
+            "backend.app using local import paths; ensure PYTHONPATH includes project root.",
+        )
+        from database import init_db  # type: ignore
+        from routes import reports_bp  # type: ignore
+        from routes.ai import bp as ai_bp  # type: ignore
 
 
 def _resolve_host(default: str = "0.0.0.0") -> str:

@@ -2,11 +2,25 @@
 """
 Routes Blueprint - Main
 """
+import logging
+
 from flask import Blueprint
+
+logger = logging.getLogger(__name__)
 
 reports_bp = Blueprint('reports', __name__, url_prefix='/api')
 
-from . import ai  # Import diğer route modülleri
+try:  # pragma: no cover - prefer absolute imports
+    from backend.routes import ai as _ai_routes  # noqa: F401  # ensure AI routes registered
+except ImportError:  # pragma: no cover - fallback for script execution
+    logger.warning("backend.routes.init falling back to relative import for ai routes")
+    try:
+        from . import ai as _ai_routes  # type: ignore # noqa: F401
+    except ImportError:  # pragma: no cover - running from repository root
+        logger.warning(
+            "backend.routes.init using local ai import; ensure PYTHONPATH includes project root.",
+        )
+        import ai as _ai_routes  # type: ignore # noqa: F401
 
 # Upload endpoint
 from flask import request, jsonify
@@ -18,9 +32,6 @@ from datetime import datetime
 @reports_bp.route('/upload', methods=['POST'])
 def upload_report():
     """PDF yükle ve analiz et"""
-    import logging
-    logger = logging.getLogger(__name__)
-
     logger.info("=" * 70)
     logger.info("UPLOAD ENDPOINT CALLED")
     logger.info("=" * 70)

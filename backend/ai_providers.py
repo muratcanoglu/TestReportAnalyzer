@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-try:  # pragma: no cover - support execution without package context
-    from .claude_client import analyze_with_claude
-    from .config import AI_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY
-    from .openai_client import analyze_with_openai
-except ImportError:  # pragma: no cover
-    from claude_client import analyze_with_claude  # type: ignore
-    from config import AI_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY  # type: ignore
-    from openai_client import analyze_with_openai  # type: ignore
+try:  # pragma: no cover - prefer absolute imports within the package
+    from backend.claude_client import analyze_with_claude
+    from backend.config import AI_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY
+    from backend.openai_client import analyze_with_openai
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .claude_client import analyze_with_claude  # type: ignore
+        from .config import AI_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY  # type: ignore
+        from .openai_client import analyze_with_openai  # type: ignore
+    except ImportError:  # pragma: no cover - running from repository root
+        from claude_client import analyze_with_claude  # type: ignore
+        from config import AI_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY  # type: ignore
+        from openai_client import analyze_with_openai  # type: ignore
 
 
 def analyze_with_ai(text: str) -> Dict[str, Any]:
