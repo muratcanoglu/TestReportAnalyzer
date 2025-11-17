@@ -39,7 +39,6 @@ try:  # pragma: no cover - prefer absolute imports under package execution
         parse_kielt_format,
     )
     from backend.pdf_section_analyzer import detect_sections
-    from backend.parsers.kielt_parser import parse_page_2_metadata
 except ImportError:  # pragma: no cover - fallback for script execution
     try:
         from .ai_analyzer import (  # type: ignore
@@ -55,7 +54,6 @@ except ImportError:  # pragma: no cover - fallback for script execution
             parse_kielt_format,
         )
         from .pdf_section_analyzer import detect_sections  # type: ignore
-        from .parsers.kielt_parser import parse_page_2_metadata  # type: ignore
     except ImportError:  # pragma: no cover - running from repository root
         from ai_analyzer import (  # type: ignore
             ai_analyzer,
@@ -70,7 +68,18 @@ except ImportError:  # pragma: no cover - fallback for script execution
             parse_kielt_format,
         )
         from pdf_section_analyzer import detect_sections  # type: ignore
-        from parsers.kielt_parser import parse_page_2_metadata  # type: ignore
+
+try:  # pragma: no cover - optional parser dependency
+    from backend.parsers.kielt_parser import parse_page_2_metadata
+except ImportError:
+    try:
+        from .parsers.kielt_parser import parse_page_2_metadata  # type: ignore
+    except ImportError:
+        try:
+            from parsers.kielt_parser import parse_page_2_metadata  # type: ignore
+        except ImportError:
+            parse_page_2_metadata = None  # type: ignore
+            logging.getLogger(__name__).info("parse_page_2_metadata not available")
 
 PASS_PATTERN = r"(PASS|PASSED|SUCCESS|OK|✓|SUCCESSFUL|Başarılı|Geçti|BAŞARILI|GEÇTİ|Basarili|Gecti)"
 FAIL_PATTERN = r"(FAIL|FAILED|ERROR|EXCEPTION|✗|FAILURE|Başarısız|Kaldı|Hata|BAŞARISIZ|KALDI|HATA|Basarisiz|Kaldi)"
@@ -701,52 +710,6 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
             sections = parse_kielt_format(text)
             measurement_params = extract_measurement_params(text, tables=tables)
 
-            page_texts = extraction_result.get("page_texts") or []
-            if page_texts and len(page_texts) >= 2:
-                page_2_text = page_texts[1]
-                logger.info("  Sayfa 2 metni uzunluğu: %s", len(page_2_text))
-                try:
-                    page_2_metadata = parse_page_2_metadata(pdf_path_obj)
-                except Exception as exc:  # pragma: no cover - defensive logging
-                    logger.warning("  Sayfa 2 metadatası çıkarılamadı: %s", exc)
-                    page_2_metadata = {}
-
-                if page_2_metadata.get("error"):
-                    logger.warning(
-                        "  Page-2 metadata çıkarılamadı (error=%s)",
-                        page_2_metadata["error"],
-                    )
-                    page_2_metadata = {}
-
-                if page_2_metadata:
-                    sections["page_2_metadata"] = page_2_metadata
-                    missing_fields = [
-                        key
-                        for key, value in page_2_metadata.items()
-                        if key
-                        not in {
-                            "pruefling",
-                            "pruefergebnis",
-                            "lehnen_winkel_table",
-                            "raw_page_text",
-                        }
-                        and not value
-                    ]
-                    if missing_fields:
-                        logger.warning(
-                            "  Page-2 metadata eksik alanlar: %s",
-                            ", ".join(missing_fields),
-                        )
-                    else:
-                        logger.info("  Page-2 metadata eksiksiz bulundu")
-                else:
-                    logger.warning("  Page-2 metadata boş döndü")
-            else:
-                logger.warning(
-                    "  Page-2 metadata çıkarılamadı (toplam sayfa: %s)",
-                    len(page_texts),
-                )
-
             logger.info("  Kielt parse tamamlandı:")
             logger.info("    - Bölüm sayısı: %s", len(sections))
             for key, value in sections.items():
@@ -772,6 +735,45 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
             sections = detect_sections(text)
             measurement_params = []
             logger.info("  Generic parse: %s bölüm", len(sections))
+
+        # 3.1 Page-2 metadata parse
+        logger.info("\n[3.1] Page-2 Metadata Parse")
+        existing_page_2 = sections.get("page_2_metadata")
+        sections["page_2_metadata"] = existing_page_2 if isinstance(existing_page_2, dict) else {}
+
+        if parse_page_2_metadata is None:
+            logger.info("  Page-2 metadata parser kullanılamıyor (parse_page_2_metadata not available)")
+        else:
+            logger.info("  Page-2 metadata parser çağrılıyor")
+            try:
+                page_2_metadata_result = parse_page_2_metadata(pdf_path_obj)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("  Page-2 metadata çıkarılırken hata: %s", exc)
+                sections["page_2_metadata"] = {"error": str(exc)}
+            else:
+                if not page_2_metadata_result or page_2_metadata_result.get("error"):
+                    if page_2_metadata_result and page_2_metadata_result.get("error"):
+                        logger.warning(
+                            "  Page-2 metadata parser error: %s",
+                            page_2_metadata_result["error"],
+                        )
+                    sections["page_2_metadata"] = {}
+                else:
+                    sections["page_2_metadata"] = page_2_metadata_result
+
+        if parse_page_2_metadata is None:
+            logger.info("  Page-2 metadata parser yok - boş placeholder döndü")
+        else:
+            metadata_for_summary = sections.get("page_2_metadata") or {}
+            non_empty_fields = [
+                key
+                for key, value in metadata_for_summary.items()
+                if key != "error" and value not in (None, "", [], {})
+            ]
+            logger.info(
+                "  Page-2 metadata non-empty alan sayısı: %s",
+                len(non_empty_fields),
+            )
 
         # 4. Basic test parse
         logger.info("\n[4] Basic Test Parse")
