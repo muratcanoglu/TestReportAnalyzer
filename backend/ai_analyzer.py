@@ -441,8 +441,121 @@ class AIAnalyzer:
         failed_tests: int,
         excerpt: str,
         failure_details: Sequence[Dict[str, str]],
+        structured_data: Optional[Dict[str, object]] = None,
     ) -> str:
         """Raporun tamamını özetleyecek çok dilli JSON yanıtı iste."""
+
+        def _to_text(value: object) -> str:
+            if isinstance(value, str):
+                return value.strip()
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _or_na(text: str) -> str:
+            return text if text else "N/A"
+
+        page_2_metadata: Dict[str, object] = {}
+        if isinstance(structured_data, dict):
+            candidate = structured_data.get("page_2_metadata", {})
+            if isinstance(candidate, dict):
+                page_2_metadata = candidate
+
+        customer_info = _or_na(_to_text(page_2_metadata.get("auftraggeber")))
+        participants = _or_na(_to_text(page_2_metadata.get("anwesende")))
+
+        condition_parts: List[str] = []
+        for label, key in [
+            ("Versuchsbedingungen", "versuchsbedingungen"),
+            ("Justierung/Kontrol", "justierung_kontrolle"),
+            ("Schlittenverzögerung", "schlittenverzoegerung"),
+            ("Examiner", "examiner"),
+            ("Testfahrzeug", "testfahrzeug"),
+        ]:
+            value = _to_text(page_2_metadata.get(key))
+            if value:
+                condition_parts.append(f"{label}: {value}")
+        test_conditions_page2 = _or_na(" | ".join(condition_parts))
+
+        pruefling = page_2_metadata.get("pruefling") if isinstance(page_2_metadata, dict) else None
+        pruefling = pruefling if isinstance(pruefling, dict) else {}
+        sample_parts: List[str] = []
+        for label, key in [
+            ("Bezeichnung", "bezeichnung"),
+            ("Hersteller", "hersteller"),
+            ("Typ", "typ"),
+            ("Seriennummer", "seriennummer"),
+            ("Baujahr", "baujahr"),
+            ("Gewicht", "gewicht"),
+        ]:
+            value = _to_text(pruefling.get(key)) if pruefling else ""
+            if value:
+                sample_parts.append(f"{label}: {value}")
+        for mount_label, mount_key in [
+            ("Hinten montiert", "hinten_montiert"),
+            ("Vorne montiert", "vorne_montiert"),
+        ]:
+            mount = pruefling.get(mount_key) if isinstance(pruefling, dict) else {}
+            if isinstance(mount, dict):
+                mount_parts: List[str] = []
+                for sub_label, sub_key in [("Gurt", "gurt"), ("Adapter", "adapter")]:
+                    sub_value = _to_text(mount.get(sub_key))
+                    if sub_value:
+                        mount_parts.append(f"{sub_label}: {sub_value}")
+                if mount_parts:
+                    sample_parts.append(f"{mount_label} ({', '.join(mount_parts)})")
+        test_sample_info = _or_na(" | ".join(sample_parts))
+
+        pruefergebnis = page_2_metadata.get("pruefergebnis") if isinstance(page_2_metadata, dict) else None
+        pruefergebnis = pruefergebnis if isinstance(pruefergebnis, dict) else {}
+        result_parts: List[str] = []
+        for label, key in [
+            ("Ergebnis", "ergebnis"),
+            ("Freigabe", "freigabe"),
+            ("Prüfer", "pruefer"),
+            ("Datum", "datum"),
+        ]:
+            value = _to_text(pruefergebnis.get(key))
+            if value:
+                result_parts.append(f"{label}: {value}")
+        dummypruefung = pruefergebnis.get("dummypruefung") if isinstance(pruefergebnis, dict) else None
+        if isinstance(dummypruefung, dict):
+            dummy_parts: List[str] = []
+            for key, value in dummypruefung.items():
+                text_value = _to_text(value)
+                if text_value:
+                    dummy_parts.append(f"{key}: {text_value}")
+            if dummy_parts:
+                result_parts.append("Dummyprüfung -> " + "; ".join(dummy_parts))
+        test_results_summary = _or_na(" | ".join(result_parts))
+
+        lehnen_table = page_2_metadata.get("lehnen_winkel_table")
+        angles_parts: List[str] = []
+        if isinstance(lehnen_table, dict):
+            for row_label in ("vorher", "nachher"):
+                row = lehnen_table.get(row_label)
+                if not isinstance(row, dict):
+                    continue
+                row_values: List[str] = []
+                for pos in ("hinten_links", "hinten_rechts", "vorne_links", "vorne_rechts"):
+                    value = row.get(pos)
+                    if value is not None:
+                        pretty_pos = pos.replace("_", " ").title()
+                        row_values.append(f"{pretty_pos}: {value}°")
+                if row_values:
+                    angles_parts.append(f"{row_label.title()}: {', '.join(row_values)}")
+        backrest_angles = _or_na(" | ".join(angles_parts))
+
+        if page_2_metadata:
+            logger.info(
+                "Page-2 metadata summary hazırlandı (customer=%s, participants=%s, verdict=%s, angles=%s)",
+                customer_info,
+                participants,
+                test_results_summary,
+                backrest_angles,
+            )
+        else:
+            logger.info("Page-2 metadata bulunamadı, özet oluşturulamadı")
 
         failure_lines: List[str] = []
         for failure in failure_details:
@@ -461,6 +574,14 @@ PDF test raporunu analiz eden uzman bir mühendis olarak hareket et. Rapor dosya
 Toplam test sayısı: {total_tests}. Başarılı test sayısı: {passed_tests}. Başarısız test sayısı: {failed_tests}.
 Başarısız testlerin özet listesi:
 {failure_block}
+
+Test Report Details (Page 2):
+- Customer / Auftraggeber: {customer_info}
+- Participants / Anwesende: {participants}
+- Test & Measurement Conditions: {test_conditions_page2}
+- Test Sample (Prüfling) Info: {test_sample_info}
+- Prüfergebnis Summary: {test_results_summary}
+- Lehnen/Winkel Backrest Angles: {backrest_angles}
 
 Rapor metninden çıkarılmış içerik (görsel ve tablo açıklamaları dahil olabilir):
 """
@@ -490,6 +611,12 @@ GÖREV:
 }
 
 Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
+ANALYSIS REQUIREMENTS:
+- Prüfergebnis hükümlerini değerlendir ve PASS/FAIL bağlamını açıkla: {test_results_summary}
+- Lehnen/Winkel tablosundaki açı değişimlerini karşılaştır ve yorumla: {backrest_angles}
+- Auftraggeber ve katılımcı bilgilerini kullanarak müşteri beklentilerini analiz et: {customer_info} / {participants}
+- Test ve ölçüm koşullarının standartlara uyumunu doğrula: {test_conditions_page2}
+- Ölçümler ve çıkarımlara dayanarak nihai PASS/FAIL yargısı ver.
 """
 
         return textwrap.dedent(prompt).strip()
@@ -668,8 +795,13 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
         failed_tests: int,
         raw_text: str,
         failure_details: Sequence[Dict[str, str]],
+        structured_data: Optional[Dict[str, object]] = None,
     ) -> Optional[Dict[str, object]]:
-        """PDF metnini detaylı şekilde inceleyen bir özet üret."""
+        """PDF metnini detaylı şekilde inceleyen bir özet üret.
+
+        structured_data parametresi varsa, özellikle KIELT formatındaki sayfa-2
+        metadata bilgileri prompt'a dahil edilir.
+        """
 
         self._refresh_configuration()
         provider = (self.provider or "none").lower()
@@ -685,6 +817,7 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
             failed_tests=failed_tests,
             excerpt=excerpt,
             failure_details=failure_details,
+            structured_data=structured_data,
         )
 
         providers: List[str]
