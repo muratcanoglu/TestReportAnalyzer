@@ -111,23 +111,63 @@ kurulmuşsa, yolu `.env` dosyasında `TESSERACT_CMD=C:\Program Files\Tesseract-O
 
 ### Frontend API Configuration
 
-Frontend, build anında `frontend/.env` dosyasındaki `REACT_APP_*` değişkenlerini okur. Örnek bir dosya `frontend/.env.example`
-olarak depoda yer alır.
+Frontend, build anında `frontend/.env` dosyasındaki `REACT_APP_*` değişkenlerini okur. Örnek bir dosya `frontend/.env.example` olarak depoda yer alır ve aşağıdaki değişkenler üzerinden API hedefini belirler.
+
+#### Backend CORS Beklentileri
+
+Frontend farklı bir domain/port üzerinden hizmet verecekse backend'in CORS ayarlarının ilgili origin'i (örn. `http://localhost:3000` veya `https://qa.your-company.com`) izinli listesine eklenmesi gerekir. Varsayılan Flask uygulaması `frontend/.env` dosyasındaki host ile eşleşen origin'lerden gelen `fetch/XHR` çağrılarına izin verecek şekilde yapılandırılmalıdır; aksi halde tarayıcı CORS hatalarıyla karşılaşırsınız.
+
+### Development Setup
+
+Yerel geliştirme sırasında aşağıdaki adımları izleyin:
 
 1. `frontend` klasörüne gidin ve örnek dosyayı kopyalayın:
    ```bash
    cd frontend
    cp .env.example .env
    ```
-2. Yerel geliştirmede `REACT_APP_API_BASE_URL` değerini backend'in çalıştığı hosta göre güncelleyin (varsayılan: `http://localhost:5000/api`).
-3. Üretim için `cp .env.example .env.production` komutu ile ayrı bir dosya oluşturun ve alanı dağıttığınız domaine göre güncelleyin (örnek: `https://qa.your-company.com/api`).
-4. `REACT_APP_DEBUG` değerini `true` bırakırsanız frontend tarayıcı konsolunda ayrıntılı API logları görürsünüz. Üretim derlemelerinde `false` değerine çekmeniz önerilir.
+2. `REACT_APP_API_BASE_URL` değerini backend'in çalıştığı hosta göre güncelleyin (varsayılan: `http://localhost:5000/api`).
+3. Bağımlılıkları kurup geliştirme sunucusunu başlatın:
+   ```bash
+   npm install
+   npm start
+   ```
+4. `REACT_APP_DEBUG=true` bırakırsanız frontend tarayıcı konsolunda ayrıntılı API logları görürsünüz; hata ayıklama sırasında açık, üretim derlemelerinde kapalı tutmanız önerilir.
+
+### Production Deployment
+
+Üretime çıkarken `.env.production` dosyası üzerinden API adreslerini sabitleyin ve build çıktısını dağıtın.
+
+- `cp .env.example .env.production` komutu ile üretim için ayrı bir dosya oluşturun ve dağıttığınız domaine göre güncelleyin (örnek: `https://qa.your-company.com/api`).
+
+**Option 1 – Backend-served build:** `npm run build` çıktısını `frontend/build` klasörüne alın ve Flask/PowerShell betikleri aracılığıyla aynı Windows sunucusunda servis edin. Backend, `build` klasörünü statik dosya olarak sunarken `/api` isteklerini aynı origin altında karşılar.
+
+**Option 2 – Separate frontend + reverse proxy:** Build çıktısını IIS veya nginx gibi bir web sunucusuna koyun. nginx kullandığınızda şu proxy yönergesini ekleyin: `location /api { proxy_pass http://127.0.0.1:5000/api; }`. Böylece tarayıcı yalnızca 443/80 portlarını görürken API çağrıları backend'e yönlendirilir.
+
+> Not: nginx üzerinde SSL sonlandırırken hem `/` hem de `/api` yollarını aynı domain altında tutmanız gerekir; aksi halde tarayıcı CORS hataları üretir.
+
+### Environment Variables Reference
+
+| Variable | Description | Default | Example |
+| --- | --- | --- | --- |
+| `REACT_APP_API_BASE_URL` | Frontend'in API isteklerini yönlendirdiği temel URL | `http://localhost:5000/api` | `https://qa.your-company.com/api` |
+| `REACT_APP_DEBUG` | Konsolda ayrıntılı API loglarını aç/kapat | `true` (development) | `false` |
 
 > Not: `.env` ve `.env.production` dosyaları Git'e eklenmez; değişiklikleri dağıtım ortamında yönetmeniz gerekir.
 
-#### Backend CORS Beklentileri
+### Backend Configuration
 
-Frontend farklı bir domain/port üzerinden hizmet verecekse backend'in CORS ayarlarının ilgili origin'i (örn. `http://localhost:3000` veya `https://qa.your-company.com`) izinli listesine eklenmesi gerekir. Varsayılan Flask uygulaması `frontend/.env` dosyasındaki host ile eşleşen origin'lerden gelen `fetch/XHR` çağrılarına izin verecek şekilde yapılandırılmalıdır; aksi halde tarayıcı CORS hatalarıyla karşılaşırsınız.
+Backend tarafında `backend/.env` dosyası kullanılır ve aşağıdaki anahtarlar beklenir:
+
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `AI_PROVIDER`
+- `AI_OPENAI_MODEL`
+- `AI_ANTHROPIC_MODEL`
+- `AI_MAX_TOKENS`
+- `AI_TIMEOUT_S`
+
+`setup.ps1` betiği `.env.example` dosyasından başlangıç değerlerini kopyalar; gerçek anahtarları manuel olarak girmeniz gerekir.
 
 ## AI Entegrasyonu (Opsiyonel)
 
