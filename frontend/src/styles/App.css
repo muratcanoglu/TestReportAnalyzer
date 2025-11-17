@@ -200,6 +200,73 @@ a:hover {
   background-color: rgba(148, 163, 184, 0.12);
 }
 
+.page-2-metadata {
+  margin-top: 2rem;
+  padding: 2rem;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.page-2-metadata h3 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.detail-section {
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.detail-section h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+}
+
+.detail-section ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--muted-color);
+}
+
+.detail-section li {
+  margin-bottom: 0.35rem;
+}
+
+.detail-section p {
+  margin: 0;
+  color: var(--muted-color);
+}
+
+.angles-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.angles-table th,
+.angles-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.angles-table th {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  color: var(--muted-color);
+}
+
+.angles-table td:last-child {
+  font-weight: 600;
+}
+
 .analysis-grid {
   display: grid;
   gap: 16px;
