@@ -2,28 +2,21 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getReportById } from "../api";
 
-function ReportDetail() {
-  const { id } = useParams();
-  const [report, setReport] = useState(null);
-  const [detailedAnalysis, setDetailedAnalysis] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+const displayValue = (value) => {
+  if (value === null || value === undefined) {
+    return "N/A";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || "N/A";
+  }
+  return String(value);
+};
 
-  const displayValue = (value) => {
-    if (value === null || value === undefined) {
-      return "N/A";
-    }
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      return trimmed || "N/A";
-    }
-    return String(value);
-  };
-
-  const renderPruefling = (pruefling) => {
-    if (!pruefling || typeof pruefling !== "object") {
-      return <p>N/A</p>;
-    }
+const renderPruefling = (pruefling) => {
+  if (!pruefling || typeof pruefling !== "object") {
+    return <p>N/A</p>;
+  }
 
     const baseFields = [
       ["Bezeichnung", pruefling.bezeichnung],
@@ -84,10 +77,10 @@ function ReportDetail() {
     );
   };
 
-  const renderPruefergebnis = (pruefergebnis) => {
-    if (!pruefergebnis || typeof pruefergebnis !== "object") {
-      return <p>N/A</p>;
-    }
+const renderPruefergebnis = (pruefergebnis) => {
+  if (!pruefergebnis || typeof pruefergebnis !== "object") {
+    return <p>N/A</p>;
+  }
 
     const statusColor = (value) => {
       if (!value || typeof value !== "string") {
@@ -142,62 +135,167 @@ function ReportDetail() {
     );
   };
 
-  const renderLehnenWinkel = (lehnenTable) => {
-    if (!lehnenTable || typeof lehnenTable !== "object") {
-      return <p>N/A</p>;
+const normalizeAngle = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value.replace("°", "").replace(",", ".").trim();
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const LEGACY_POSITION_MAP = {
+  rear: [
+    { key: "hinten_links", label: "Hinten Links" },
+    { key: "hinten_rechts", label: "Hinten Rechts" },
+  ],
+  front: [
+    { key: "vorne_links", label: "Vorne Links" },
+    { key: "vorne_rechts", label: "Vorne Rechts" },
+  ],
+};
+
+const normalizeLegacyLehnenData = (legacyTable) => {
+  if (!legacyTable || typeof legacyTable !== "object") {
+    return null;
+  }
+
+  const before = typeof legacyTable.vorher === "object" ? legacyTable.vorher : {};
+  const after = typeof legacyTable.nachher === "object" ? legacyTable.nachher : {};
+
+  return Object.entries(LEGACY_POSITION_MAP).reduce(
+    (acc, [groupKey, positions]) => {
+      acc[groupKey] = positions
+        .map(({ key, label }) => {
+          const beforeAngle = before[key];
+          const afterAngle = after[key];
+          if (
+            (beforeAngle === null || beforeAngle === undefined) &&
+            (afterAngle === null || afterAngle === undefined)
+          ) {
+            return null;
+          }
+          return {
+            seat: label,
+            before: beforeAngle,
+            after: afterAngle,
+          };
+        })
+        .filter(Boolean);
+      return acc;
+    },
+    { rear: [], front: [] },
+  );
+};
+
+const renderLehnenWinkel = (lehnenData) => {
+  if (!lehnenData || typeof lehnenData !== "object") {
+    return <p>N/A</p>;
+  }
+
+  const structuredData =
+    lehnenData.vorher || lehnenData.nachher
+      ? normalizeLegacyLehnenData(lehnenData) || {}
+      : lehnenData;
+
+  const seatGroups = [
+    { key: "rear", label: "Hintensitze" },
+    { key: "front", label: "Vordersitze" },
+  ];
+
+  const hasRows = seatGroups.some(({ key }) =>
+    Array.isArray(structuredData?.[key]) && structuredData[key].length > 0,
+  );
+
+  if (!hasRows) {
+    return <p>N/A</p>;
+  }
+
+  const formatAngle = (value) => {
+    const normalized = normalizeAngle(value);
+    if (normalized === null) {
+      return "N/A";
+    }
+    return `${normalized.toFixed(1)}°`;
+  };
+
+  const buildDelta = (entry) => {
+    if (typeof entry?.delta === "number" && Number.isFinite(entry.delta)) {
+      return entry.delta;
+    }
+    const before = normalizeAngle(entry?.before);
+    const after = normalizeAngle(entry?.after);
+    if (before === null || after === null) {
+      return null;
+    }
+    return after - before;
+  };
+
+  const deltaClassName = (delta) => {
+    if (delta === null) {
+      return "";
+    }
+    if (delta > 0) {
+      return "delta-positive";
+    }
+    if (delta < 0) {
+      return "delta-negative";
+    }
+    return "delta-neutral";
+  };
+
+  const renderSeatGroup = (groupKey, label) => {
+    const entries = Array.isArray(structuredData?.[groupKey]) ? structuredData?.[groupKey] ?? [] : [];
+    if (entries.length === 0) {
+      return null;
     }
 
-    const positions = [
-      { key: "hinten_links", label: "Hinten Links" },
-      { key: "hinten_rechts", label: "Hinten Rechts" },
-      { key: "vorne_links", label: "Vorne Links" },
-      { key: "vorne_rechts", label: "Vorne Rechts" },
-    ];
-
-    const vorher = (lehnenTable.vorher || {});
-    const nachher = (lehnenTable.nachher || {});
-
-    const formatAngle = (value) => {
-      if (value === null || value === undefined) {
-        return "N/A";
-      }
-      if (typeof value === "number") {
-        return `${value.toFixed(1)}°`;
-      }
-      return `${value}°`;
-    };
-
-    const deltaValue = (before, after) => {
-      if (typeof before !== "number" || typeof after !== "number") {
-        return "N/A";
-      }
-      const delta = after - before;
-      return `${delta.toFixed(1)}°`;
-    };
-
     return (
-      <table className="angles-table">
-        <thead>
-          <tr>
-            <th>Position</th>
-            <th>Vorher</th>
-            <th>Nachher</th>
-            <th>Δ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {positions.map(({ key, label }) => (
-            <tr key={key}>
-              <td>{label}</td>
-              <td>{formatAngle(vorher[key])}</td>
-              <td>{formatAngle(nachher[key])}</td>
-              <td>{deltaValue(vorher[key], nachher[key])}</td>
+      <div key={groupKey} className="angles-group">
+        <h5>{label}</h5>
+        <table className="angles-table">
+          <thead>
+            <tr>
+              <th>Sitzposition</th>
+              <th>Vorher</th>
+              <th>Nachher</th>
+              <th>Δ</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((entry, idx) => {
+              const delta = buildDelta(entry);
+              const formattedDelta =
+                delta === null ? "N/A" : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}°`;
+              return (
+                <tr key={`${groupKey}-${entry?.seat || entry?.position || idx}`}>
+                  <td>{entry?.seat || entry?.position || `Position ${idx + 1}`}</td>
+                  <td>{formatAngle(entry?.before)}</td>
+                  <td>{formatAngle(entry?.after)}</td>
+                  <td className={deltaClassName(delta)}>{formattedDelta}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     );
   };
+
+  return <div className="lehnen-winkel-groups">{seatGroups.map(({ key, label }) => renderSeatGroup(key, label))}</div>;
+};
+
+function ReportDetail() {
+  const { id } = useParams();
+  const [report, setReport] = useState(null);
+  const [detailedAnalysis, setDetailedAnalysis] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -230,19 +328,58 @@ function ReportDetail() {
 
   const page2MetadataRaw = report.structured_data?.page_2_metadata;
   const page2Metadata =
-    page2MetadataRaw && typeof page2MetadataRaw === "object" ? page2MetadataRaw : {};
+    page2MetadataRaw && typeof page2MetadataRaw === "object" && !Array.isArray(page2MetadataRaw)
+      ? page2MetadataRaw
+      : null;
+  const disallowedStatuses = new Set(["parser_not_available", "no_data_extracted", "error"]);
+  const page2Status = page2Metadata?.status;
+  const metadataKeys = page2Metadata ? Object.keys(page2Metadata) : [];
+  const nonStatusKeys = metadataKeys.filter((key) => key !== "status");
+  const hasNonEmptyData = nonStatusKeys.some((key) => {
+    const value = page2Metadata?.[key];
+    if (value === null || value === undefined) {
+      return false;
+    }
+    if (typeof value === "string") {
+      return Boolean(value.trim());
+    }
+    if (typeof value === "object") {
+      return Object.keys(value).length > 0;
+    }
+    return true;
+  });
+  const normalizedStatus =
+    typeof page2Status === "string" ? page2Status.toLowerCase() : page2Status;
+  const shouldRenderPage2 =
+    !!page2Metadata && hasNonEmptyData && !disallowedStatuses.has(normalizedStatus);
+
   const prueflingData =
-    page2Metadata.pruefling && typeof page2Metadata.pruefling === "object"
+    shouldRenderPage2 && page2Metadata?.pruefling && typeof page2Metadata.pruefling === "object"
       ? page2Metadata.pruefling
       : null;
   const pruefergebnisData =
-    page2Metadata.pruefergebnis && typeof page2Metadata.pruefergebnis === "object"
+    shouldRenderPage2 && page2Metadata?.pruefergebnis && typeof page2Metadata.pruefergebnis === "object"
       ? page2Metadata.pruefergebnis
       : null;
-  const lehnenWinkelData =
-    page2Metadata.lehnen_winkel_table && typeof page2Metadata.lehnen_winkel_table === "object"
-      ? page2Metadata.lehnen_winkel_table
-      : null;
+  const lehnenWinkelData = (() => {
+    if (!shouldRenderPage2) {
+      return null;
+    }
+    if (page2Metadata?.lehnen_winkel && typeof page2Metadata.lehnen_winkel === "object") {
+      return page2Metadata.lehnen_winkel;
+    }
+    if (
+      page2Metadata?.lehnen_winkel_table &&
+      typeof page2Metadata.lehnen_winkel_table === "object"
+    ) {
+      return page2Metadata.lehnen_winkel_table;
+    }
+    return null;
+  })();
+
+  const prueflingSection = renderPruefling(prueflingData);
+  const pruefergebnisSection = renderPruefergebnis(pruefergebnisData);
+  const lehnenWinkelSection = renderLehnenWinkel(lehnenWinkelData);
 
   return (
     <div className="report-detail">
@@ -304,55 +441,57 @@ function ReportDetail() {
         )}
       </div>
 
-      <div className="page-2-metadata">
-        <h3>Page 2 Metadata</h3>
+      {shouldRenderPage2 && (
+        <div className="page-2-metadata">
+          <h3>Page 2 Metadata</h3>
 
-        <div className="detail-section">
-          <h4>Customer Information</h4>
-          <p>
-            <strong>Auftraggeber:</strong> {displayValue(page2Metadata.auftraggeber)}
-          </p>
-        </div>
+          <div className="detail-section">
+            <h4>Customer Information</h4>
+            <p>
+              <strong>Auftraggeber:</strong> {displayValue(page2Metadata?.auftraggeber)}
+            </p>
+          </div>
 
-        <div className="detail-section">
-          <h4>Test Participants</h4>
-          <p>
-            <strong>Anwesende:</strong> {displayValue(page2Metadata.anwesende)}
-          </p>
-        </div>
+          <div className="detail-section">
+            <h4>Test Participants</h4>
+            <p>
+              <strong>Anwesende:</strong> {displayValue(page2Metadata?.anwesende)}
+            </p>
+          </div>
 
-        <div className="detail-section">
-          <h4>Test Conditions</h4>
-          <ul>
-            {[
-              ["Versuchsbedingungen", page2Metadata.versuchsbedingungen],
-              ["Justierung/Kontrolle", page2Metadata.justierung_kontrolle],
-              ["Schlittenverzögerung", page2Metadata.schlittenverzoegerung],
-              ["Examiner", page2Metadata.examiner],
-              ["Testfahrzeug", page2Metadata.testfahrzeug],
-            ].map(([label, value]) => (
-              <li key={label}>
-                <strong>{label}:</strong> {displayValue(value)}
-              </li>
-            ))}
-          </ul>
-        </div>
+          <div className="detail-section">
+            <h4>Test Conditions</h4>
+            <ul>
+              {[
+                ["Versuchsbedingungen", page2Metadata?.versuchsbedingungen],
+                ["Justierung/Kontrolle", page2Metadata?.justierung_kontrolle],
+                ["Schlittenverzögerung", page2Metadata?.schlittenverzoegerung],
+                ["Examiner", page2Metadata?.examiner],
+                ["Testfahrzeug", page2Metadata?.testfahrzeug],
+              ].map(([label, value]) => (
+                <li key={label}>
+                  <strong>{label}:</strong> {displayValue(value)}
+                </li>
+              ))}
+            </ul>
+          </div>
 
-        <div className="detail-section">
-          <h4>Test Sample</h4>
-          {renderPruefling(prueflingData)}
-        </div>
+          <div className="detail-section">
+            <h4>Test Sample</h4>
+            {prueflingSection}
+          </div>
 
-        <div className="detail-section">
-          <h4>Test Results</h4>
-          {renderPruefergebnis(pruefergebnisData)}
-        </div>
+          <div className="detail-section">
+            <h4>Test Results</h4>
+            {pruefergebnisSection}
+          </div>
 
-        <div className="detail-section">
-          <h4>Backrest Angles</h4>
-          {renderLehnenWinkel(lehnenWinkelData)}
+          <div className="detail-section">
+            <h4>Backrest Angles</h4>
+            {lehnenWinkelSection}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

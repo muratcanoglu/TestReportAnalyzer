@@ -320,6 +320,126 @@ a:hover {
   gap: 12px 20px;
 }
 
+/* Page 2 metadata refinements */
+.page-2-metadata {
+  padding: 2.25rem;
+  border-radius: 1.5rem;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  gap: 1.75rem;
+}
+
+.page-2-metadata h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.detail-section {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.detail-section + .detail-section {
+  margin-top: 0.5rem;
+}
+
+.detail-section h4 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+.detail-section ul {
+  padding-left: 1.25rem;
+  margin: 0;
+}
+
+.detail-section li {
+  margin-bottom: 0.35rem;
+}
+
+.lehnen-winkel-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.angles-group {
+  border-radius: 0.75rem;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  padding: 1rem;
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.angles-group h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+  color: var(--muted-color);
+}
+
+.angles-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.angles-table th,
+.angles-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.angles-table th {
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-color);
+}
+
+.angles-table td.delta-positive {
+  color: var(--success-color);
+  font-weight: 600;
+}
+
+.angles-table td.delta-negative {
+  color: var(--danger-color);
+  font-weight: 600;
+}
+
+.angles-table td.delta-neutral {
+  color: var(--muted-color);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .page-2-metadata {
+    padding: 1.5rem;
+    gap: 1.25rem;
+  }
+
+  .detail-section {
+    padding: 1rem;
+  }
+
+  .lehnen-winkel-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .angles-table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .angles-table th,
+  .angles-table td {
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+}
+
 .key-value-row {
   display: flex;
   flex-direction: column;
