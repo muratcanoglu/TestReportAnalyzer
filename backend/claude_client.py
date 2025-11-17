@@ -10,14 +10,21 @@ from anthropic import Anthropic
 
 try:  # pragma: no cover - prefer absolute imports in package context
     from backend.config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY
-    from backend.detailed_prompt_template import build_detailed_analysis_prompt
+    from backend.detailed_prompt_template import build_simplified_analysis_prompt
+    from backend.structured_analyzer import build_structured_data_for_ai
 except ImportError:  # pragma: no cover - fallback for script execution
     try:
         from .config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY  # type: ignore
-        from .detailed_prompt_template import build_detailed_analysis_prompt  # type: ignore
+        from .detailed_prompt_template import (  # type: ignore
+            build_simplified_analysis_prompt,
+        )
+        from .structured_analyzer import build_structured_data_for_ai  # type: ignore
     except ImportError:  # pragma: no cover - running from repository root
         from config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY  # type: ignore
-        from detailed_prompt_template import build_detailed_analysis_prompt  # type: ignore
+        from detailed_prompt_template import (  # type: ignore
+            build_simplified_analysis_prompt,
+        )
+        from structured_analyzer import build_structured_data_for_ai  # type: ignore
 
 try:  # pragma: no cover - optional dependency in some environments
     from backend.parsers.kielt_parser import parse_page_2_metadata
@@ -147,7 +154,12 @@ def analyze_with_claude(text: str) -> Dict[str, Any]:
     if not pdf_text:
         pdf_text = text
 
-    prompt = build_detailed_analysis_prompt(pdf_text, structured_metadata)
+    structured_payload = build_structured_data_for_ai(
+        pdf_path,
+        fallback_text=pdf_text,
+        metadata=structured_metadata,
+    )
+    prompt = build_simplified_analysis_prompt(structured_payload)
 
     client = _get_client()
     message = client.messages.create(
