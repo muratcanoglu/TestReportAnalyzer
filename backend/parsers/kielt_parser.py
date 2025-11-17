@@ -64,57 +64,65 @@ def normalize_decimal(value_str: Optional[str]) -> Optional[float]:
         return None
 
 _SIMPLE_PAGE2_FIELDS: Mapping[str, Iterable[str]] = {
-    "pruefbericht_nr": [r"Pr[üu]fbericht[-\s]*Nr\.?\s*[:\-]\s*([^\n]+)"],
-    "auftrags_nr": [r"Auftrags[-\s]*Nr\.?\s*[:\-]\s*([^\n]+)"],
-    "auftraggeber": [r"Auftraggeber\s*[:\-]\s*([^\n]+)"],
-    "werk": [r"Werk\s*[:\-]\s*([^\n]+)"],
-    "auftrag_vom": [r"Auftrag\s+vom\s*[:\-]\s*([^\n]+)"],
-    "pruefort": [r"Pr[üu]fort\s*[:\-]\s*([^\n]+)"],
-    "pruefdatum": [r"Pr[üu]fdatum\s*[:\-]\s*([^\n]+)"],
-    "kundennummer": [r"Kundennummer\s*[:\-]\s*([^\n]+)"],
-    "ansprechpartner": [r"Ansprechpartner\s*[:\-]\s*([^\n]+)"],
-    "telefon": [r"Telefon\s*[:\-]\s*([^\n]+)"],
-    "email": [r"E-Mail\s*[:\-]\s*([^\n]+)", r"Email\s*[:\-]\s*([^\n]+)"],
-    "pruefgrundlage": [r"Pr[üu]fgrundlage\s*[:\-]\s*([^\n]+)"],
-    "pruefumfang": [r"Pr[üu]fumfang\s*[:\-]\s*([^\n]+)"],
-    "messmittel": [r"Messmittel\s*[:\-]\s*([^\n]+)"],
-    "pruefmittelueberwachung": [r"Pr[üu]fmittel[\s-]*[ÜU]berwachung\s*[:\-]\s*([^\n]+)"]
+    "auftraggeber": ["Auftraggeber"],
+    "anwesende": ["Anwesende"],
+    "versuchsbedingungen": ["Versuchsbedingungen", "Prüfbedingungen", "Testbedingungen"],
+    "justierung_kontrolle": ["Justierung/Kontrolle", "Justierung / Kontrolle"],
+    "schlittenverzoegerung": ["Schlittenverzögerung", "Schlittenverzoegerung"],
+    "examiner": ["Examiner"],
+    "testfahrzeug": ["Testfahrzeug", "Test vehicle", "Versuchsfahrzeug"],
 }
 
-_PRUEFLING_PATTERNS: Mapping[str, Iterable[str]] = {
-    "bezeichnung": [r"Bezeichnung\s*[:\-]\s*([^\n]+)"],
-    "hersteller": [r"Hersteller\s*[:\-]\s*([^\n]+)"],
-    "typ": [r"Typ\s*[:\-]\s*([^\n]+)"],
-    "seriennummer": [r"Serien[-\s]*Nr\.?\s*[:\-]\s*([^\n]+)"],
-    "baujahr": [r"Baujahr\s*[:\-]\s*([^\n]+)"],
-    "gewicht": [r"Gewicht\s*[:\-]\s*([^\n]+)"]
+_PRUEFLING_FIELDS: Mapping[str, Iterable[str]] = {
+    "bezeichnung": ["Bezeichnung"],
+    "hersteller": ["Hersteller"],
+    "typ": ["Typ"],
+    "seriennummer": ["Serien-Nr.", "Seriennr.", "Seriennummer"],
+    "baujahr": ["Baujahr"],
+    "gewicht": ["Gewicht"],
 }
 
-_PRUEFERGEBNIS_PATTERNS: Mapping[str, Iterable[str]] = {
-    "ergebnis": [r"Ergebnis\s*[:\-]\s*([^\n]+)"],
-    "pruefer": [r"Pr[üu]fer\s*[:\-]\s*([^\n]+)"],
-    "freigabe": [r"Freigabe\s*[:\-]\s*([^\n]+)"],
-    "datum": [r"Datum\s*[:\-]\s*([^\n]+)"]
+_PRUEFERGEBNIS_FIELDS: Mapping[str, Iterable[str]] = {
+    "ergebnis": ["Ergebnis"],
+    "freigabe": ["Freigabe"],
+    "pruefer": ["Prüfer", "Pruefer"],
+    "datum": ["Datum"],
 }
 
+_ANGLE_POSITIONS: List[str] = [
+    "hinten_links",
+    "hinten_rechts",
+    "vorne_links",
+    "vorne_rechts",
+]
 
-def extract_simple_field(text: str, field_key: str, pattern: str) -> str:
-    """Return the first regex capture group for a field or an empty string."""
 
-    if not text:
-        return ""
+def extract_simple_field(text: str, key: str, *, collapse_whitespace: bool = True) -> Optional[str]:
+    """Extract a value that follows the given ``key`` label."""
 
-    try:
-        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
-    except re.error as exc:  # pragma: no cover - defensive guard
-        logger.warning("Invalid regex for %s: %s", field_key, exc)
-        return ""
+    if not text or not key:
+        return None
 
+    escaped_key = re.escape(key.strip())
+    if not escaped_key:
+        return None
+
+    next_heading = r"(?:\n\s*(?:-|\*)?\s*[A-ZÄÖÜ0-9][^:\n]{0,60}\s*(?:[:\-]))"
+    pattern = re.compile(
+        rf"^\s*(?:-|\*)?\s*{escaped_key}\s*(?:[:\-]\s*)?(?P<value>.+?)(?=(?:{next_heading})|\n\s*\n|\Z)",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+
+    match = pattern.search(text)
     if not match:
-        return ""
+        return None
 
-    value = match.group(1).strip()
-    value = re.sub(r"\s+", " ", value)
+    value = match.group("value").strip()
+    if not value:
+        return None
+
+    if collapse_whitespace:
+        value = re.sub(r"\s+", " ", value)
     return value
 
 
@@ -133,41 +141,134 @@ def _extract_block(text: str, block_label: str, *, treat_as_regex: bool = False)
     return match.group(1).strip()
 
 
-def extract_subfields(
-    text: str,
-    block_label: str,
-    field_patterns: Mapping[str, Iterable[str]],
-) -> Dict[str, str]:
-    """Extract key/value pairs from a labeled block."""
+def _normalize_subfield_key(label: str) -> str:
+    transliterated = (
+        label.lower()
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+    normalized = re.sub(r"[^a-z0-9]+", "_", transliterated)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized or transliterated.strip()
 
-    block_text = _extract_block(text, block_label)
-    if not block_text:
-        return {key: "" for key in field_patterns}
 
-    result: Dict[str, str] = {}
-    for field_key, patterns in field_patterns.items():
-        value = ""
-        for pattern in patterns:
-            value = extract_simple_field(block_text, field_key, pattern)
-            if value:
-                break
-        result[field_key] = value
+def extract_subfields(text: str) -> Dict[str, str]:
+    """Extract ``SubKey: SubValue`` pairs from ``text``."""
+
+    if not text:
+        return {}
+
+    pairs: Dict[str, str] = {}
+    pattern = re.compile(
+        r"^\s*(?:-|\*)?\s*(?P<key>[A-Za-zÄÖÜäöüß0-9/().,%+\- ]+?)\s*[:=\-]\s*(?P<value>.+)$",
+        re.MULTILINE,
+    )
+    current_key: Optional[str] = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            current_key = None
+            continue
+        match = pattern.match(line)
+        if match:
+            key = _normalize_subfield_key(match.group("key"))
+            value = match.group("value").strip()
+            value = re.sub(r"\s+", " ", value)
+            pairs[key] = value
+            current_key = key
+            continue
+        if current_key:
+            continuation = re.sub(r"\s+", " ", stripped)
+            if continuation:
+                pairs[current_key] = f"{pairs[current_key]} {continuation}".strip()
+    return pairs
+
+
+def _match_first_value(text: str, labels: Iterable[str]) -> str:
+    for label in labels:
+        value = extract_simple_field(text, label)
+        if value:
+            return value
+    return ""
+
+
+def _extract_nested_section(text: str, heading: str) -> Optional[str]:
+    pattern = re.compile(
+        rf"{re.escape(heading)}\s*:?(?P<body>(?:\r?\n\s{{2,}}.+)+)",
+        re.IGNORECASE,
+    )
+    match = pattern.search(text)
+    if match:
+        lines = [line.strip() for line in match.group("body").splitlines() if line.strip()]
+        return "\n".join(lines)
+    return extract_simple_field(text, heading, collapse_whitespace=False)
+
+
+def extract_pruefling(text: str) -> Dict[str, object]:
+    """Return structured Prüfling data, including mounting sub-sections."""
+
+    block = _extract_block(text, "Prüfling")
+    result: Dict[str, object] = {key: "" for key in _PRUEFLING_FIELDS}
+    result["hinten_montiert"] = {}
+    result["vorne_montiert"] = {}
+
+    if not block:
+        return result
+
+    for field_key, labels in _PRUEFLING_FIELDS.items():
+        result[field_key] = _match_first_value(block, labels)
+
+    for section_label, result_key in ("Hinten montiert", "hinten_montiert"), ("Vorne montiert", "vorne_montiert"):
+        section_text = _extract_nested_section(block, section_label)
+        result[result_key] = extract_subfields(section_text) if section_text else {}
+
     return result
 
 
-def extract_pruefling(text: str) -> Dict[str, str]:
-    """Return structured Prüfling data."""
+def _extract_dummy_field(text: str, pattern: str) -> str:
+    try:
+        match = re.search(pattern, text, re.IGNORECASE)
+    except re.error as exc:  # pragma: no cover - defensive guard
+        logger.warning("Invalid dummy regex %s: %s", pattern, exc)
+        return ""
+    if not match:
+        return ""
+    value = match.group("value").strip()
+    return re.sub(r"\s+", " ", value)
 
-    return extract_subfields(text, "Prüfling", _PRUEFLING_PATTERNS)
+
+_DUMMY_REGEX_PATTERNS: Mapping[str, str] = {
+    "dummy_checks": r"(?:Dummypr[üu]fung\s*)?Dummy(?:\s*-?\s*Checks?)?\s*(?:[:=\-]\s*)?(?P<value>.+?)(?:\r?\n|$)",
+    "rueckhaltung": r"R[üu]ckhaltung\s*(?:[:=\-]\s*)?(?P<value>.+?)(?:\r?\n|$)",
+    "kanten": r"Kanten\s*(?:[:=\-]\s*)?(?P<value>.+?)(?:\r?\n|$)",
+    "bemerkung": r"Bemerk(?:ung|ungen)\s*(?:[:=\-]\s*)?(?P<value>.+?)(?:\r?\n|$)",
+}
 
 
-def extract_pruefergebnis(text: str) -> Dict[str, str]:
-    """Return structured Prüfergebnis data."""
+def extract_pruefergebnis(text: str) -> Dict[str, object]:
+    """Return structured Prüfergebnis data with Dummyprüfung breakdown."""
 
-    return extract_subfields(text, "Prüfergebnis", _PRUEFERGEBNIS_PATTERNS)
+    block = _extract_block(text, "Prüfergebnis")
+    result: Dict[str, object] = {key: "" for key in _PRUEFERGEBNIS_FIELDS}
+    dummy_details = {key: "" for key in _DUMMY_REGEX_PATTERNS}
+    result["dummypruefung"] = dummy_details
+
+    if not block:
+        return result
+
+    for field_key, labels in _PRUEFERGEBNIS_FIELDS.items():
+        result[field_key] = _match_first_value(block, labels)
+
+    dummy_text = _extract_nested_section(block, "Dummyprüfung") or block
+    for dummy_key, pattern in _DUMMY_REGEX_PATTERNS.items():
+        dummy_details[dummy_key] = _extract_dummy_field(dummy_text, pattern)
+
+    return result
 
 
-def normalize_float(value: str) -> Optional[float]:
+def normalize_float(value: Optional[str]) -> Optional[float]:
     """Return a float from a localized string containing degrees."""
 
     if not value:
@@ -180,58 +281,41 @@ def normalize_float(value: str) -> Optional[float]:
     return normalize_decimal(cleaned)
 
 
-def extract_lehnen_winkel_table(text: str) -> List[Dict[str, object]]:
-    """Parse rows of the Lehnen/Winkel table."""
+def extract_lehnen_winkel_table(text: str) -> Dict[str, Dict[str, Optional[float]]]:
+    """Parse Vorher/Nachher rows of the Lehnen/Winkel table."""
 
     block_text = _extract_block(text, r"Lehnen[\s/\-]*Winkel", treat_as_regex=True)
     if not block_text:
-        return []
+        return {}
 
-    rows: List[Dict[str, object]] = []
-    row_pattern = re.compile(
-        r"(?P<label>[^:]+?)\s*:?-?\s*links\s*(?P<linkes>-?\d+[\.,]?\d*)°?\s*(?:[|/,]|und|&)?\s*rechts\s*(?P<rechts>-?\d+[\.,]?\d*)°?",
-        re.IGNORECASE,
-    )
-
-    for line in block_text.splitlines():
-        clean = line.strip()
-        if not clean:
+    table: Dict[str, Dict[str, Optional[float]]] = {}
+    for row_label in ("Vorher", "Nachher"):
+        row_text = extract_simple_field(block_text, row_label)
+        if not row_text:
             continue
-        match = row_pattern.search(clean)
-        if match:
-            rows.append(
-                {
-                    "position": match.group("label").strip(),
-                    "winkel_links": normalize_float(match.group("linkes")),
-                    "winkel_rechts": normalize_float(match.group("rechts")),
-                }
-            )
+        values = re.findall(r"-?\d+[\.,]?\d*", row_text)
+        if len(values) < len(_ANGLE_POSITIONS):
             continue
+        normalized_values = [normalize_float(value) for value in values[: len(_ANGLE_POSITIONS)]]
+        table[row_label.lower()] = {
+            position: normalized
+            for position, normalized in zip(_ANGLE_POSITIONS, normalized_values)
+        }
 
-        floats = re.findall(r"-?\d+[\.,]?\d*", clean)
-        if len(floats) >= 2:
-            rows.append(
-                {
-                    "position": clean.split(":", 1)[0].strip(),
-                    "winkel_links": normalize_float(floats[0]),
-                    "winkel_rechts": normalize_float(floats[1]),
-                }
-            )
-
-    return rows
+    return table
 
 
 def parse_page_2_metadata(page_text: str) -> Dict[str, object]:
     """Parse all known metadata from page 2 of the Kielt format."""
 
     metadata: Dict[str, object] = {}
-    for field_key, patterns in _SIMPLE_PAGE2_FIELDS.items():
-        value = ""
-        for pattern in patterns:
-            value = extract_simple_field(page_text, field_key, pattern)
+    for field_key, labels in _SIMPLE_PAGE2_FIELDS.items():
+        value: Optional[str] = ""
+        for label in labels:
+            value = extract_simple_field(page_text, label)
             if value:
                 break
-        metadata[field_key] = value
+        metadata[field_key] = value or ""
 
     metadata["pruefling"] = extract_pruefling(page_text)
     metadata["pruefergebnis"] = extract_pruefergebnis(page_text)
