@@ -65,20 +65,15 @@ def _resolve_debug(default: bool = True) -> bool:
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    # CORS - Hem localhost hem 127.0.0.1'e izin ver
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": [
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-                "http://localhost:3001",
-                "http://127.0.0.1:3001",
-            ],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True,
-        }
-    })
+
+    flask_env = os.getenv("FLASK_ENV", "development").strip().lower()
+    allowed_origins = os.getenv("ALLOWED_ORIGINS", "")
+
+    if flask_env == "production":
+        origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
+        CORS(app, resources={r"/api/*": {"origins": origins}})
+    else:
+        CORS(app, resources={r"/api/*": {"origins": "*"}})
 
     base_dir = Path(__file__).resolve().parent
     upload_dir = base_dir / "uploads"
