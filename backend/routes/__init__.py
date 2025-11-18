@@ -25,6 +25,7 @@ try:  # pragma: no cover - prefer absolute imports
     )
     from backend.ai_analyzer import ai_analyzer
     from backend.translation_utils import fallback_translate_text
+    from backend.measurement_analysis import build_measurement_analysis
     from backend.pdf_analyzer import (
         REPORT_TYPE_LABELS,
         analyze_pdf_comprehensive,
@@ -47,6 +48,7 @@ except ImportError:  # pragma: no cover - fallback for script execution
         )
         from ..ai_analyzer import ai_analyzer  # type: ignore
         from ..translation_utils import fallback_translate_text  # type: ignore
+        from ..measurement_analysis import build_measurement_analysis  # type: ignore
         from ..pdf_analyzer import (  # type: ignore
             REPORT_TYPE_LABELS,
             analyze_pdf_comprehensive,
@@ -68,6 +70,7 @@ except ImportError:  # pragma: no cover - fallback for script execution
         )
         from ai_analyzer import ai_analyzer  # type: ignore
         from translation_utils import fallback_translate_text  # type: ignore
+        from measurement_analysis import build_measurement_analysis  # type: ignore
         from pdf_analyzer import (  # type: ignore
             REPORT_TYPE_LABELS,
             analyze_pdf_comprehensive,
@@ -1475,17 +1478,52 @@ def analyze_files_with_ai():
                 )
                 raw_text = str(raw_text or "")
                 parsed_results = parse_test_results(extraction)
+                comprehensive_result = analyze_pdf_comprehensive(temp_path)
             except Exception as exc:  # pragma: no cover - defensive logging
                 temp_path.unlink(missing_ok=True)
                 return _json_error(f"PDF analizi başarısız oldu: {exc}", 500)
             finally:
                 temp_path.unlink(missing_ok=True)
 
-            report_type_key, report_type_label = infer_report_type(raw_text, filename)
+            inferred_report_key, inferred_report_label = infer_report_type(
+                raw_text, filename
+            )
+            report_type_key = (
+                str(comprehensive_result.get("report_type") or inferred_report_key)
+                or "unknown"
+            ).strip()
+            report_type_key = report_type_key.lower() or "unknown"
+            report_type_label = (
+                comprehensive_result.get("report_type_label")
+                or inferred_report_label
+                or _resolve_report_type_label(report_type_key)
+            )
+
+            basic_stats = comprehensive_result.get("basic_stats") or {}
+            structured_tests = basic_stats.get("tests") or []
+            if structured_tests:
+                parsed_results = structured_tests
+
+            def _coerce_stat(value: object, default: int = 0) -> int:
+                try:
+                    return int(value)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    return default
+
+            total_tests = _coerce_stat(
+                basic_stats.get("total_tests"), len(parsed_results)
+            )
+            passed_tests = _coerce_stat(basic_stats.get("passed"), 0)
+            failed_tests = _coerce_stat(basic_stats.get("failed"), 0)
+
+            if total_tests == 0 and parsed_results:
+                total_tests = len(parsed_results)
+            if passed_tests == 0 and total_tests and not structured_tests:
+                passed_tests = sum(1 for result in parsed_results if result.get("status") == "PASS")
+            if failed_tests == 0 and total_tests:
+                failed_tests = total_tests - passed_tests
+
             processed_files += 1
-            total_tests = len(parsed_results)
-            passed_tests = sum(1 for result in parsed_results if result.get("status") == "PASS")
-            failed_tests = total_tests - passed_tests
             alignment_key = _derive_alignment_key(total_tests, passed_tests, failed_tests)
             success_rate = (passed_tests / total_tests * 100.0) if total_tests else 0.0
             success_rate = round(success_rate, 2)
@@ -1500,6 +1538,29 @@ def analyze_files_with_ai():
                 if result.get("status") == "FAIL"
             ]
 
+            measurement_params = comprehensive_result.get("measurement_params")
+            comprehensive_analysis = (
+                comprehensive_result.get("comprehensive_analysis") or {}
+            )
+            measurement_analysis_payload = build_measurement_analysis(
+                measurement_params,
+                report_id=filename,
+                test_conditions=comprehensive_analysis.get("test_conditions", ""),
+            )
+            measurement_summary = {
+                "report_id": measurement_analysis_payload.get("report_id", filename),
+                "measured_values": measurement_analysis_payload.get(
+                    "measured_values", {}
+                ),
+                "overall_summary": measurement_analysis_payload.get(
+                    "overall_summary", {}
+                ),
+                "test_conditions_summary": measurement_analysis_payload.get(
+                    "test_conditions_summary", ""
+                ),
+                "data_source": measurement_analysis_payload.get("data_source"),
+            }
+
             fallback_localized = _build_multilingual_summary(
                 engine_label,
                 filename,
@@ -1510,15 +1571,19 @@ def analyze_files_with_ai():
                 failure_details,
             )
 
-            ai_summary_payload = ai_analyzer.generate_report_summary(
-                filename=filename,
-                report_type=report_type_label,
-                total_tests=total_tests,
-                passed_tests=passed_tests,
-                failed_tests=failed_tests,
-                raw_text=raw_text,
-                failure_details=failure_details,
-            )
+            try:
+                ai_summary_payload = ai_analyzer.generate_report_summary(
+                    filename=filename,
+                    report_type=report_type_label,
+                    total_tests=total_tests,
+                    passed_tests=passed_tests,
+                    failed_tests=failed_tests,
+                    raw_text=raw_text,
+                    failure_details=failure_details,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("AI özet oluşturma başarısız: %s", exc)
+                ai_summary_payload = {"error": str(exc)}
 
             raw_ai_summary = ""
             ai_summary_mode = "structured"
@@ -1589,6 +1654,7 @@ def analyze_files_with_ai():
                     "highlights": analysis_highlights,
                     "ai_raw_summary": raw_ai_summary,
                     "ai_summary_mode": ai_summary_mode,
+                    "measurement_analysis": measurement_summary,
                 }
             )
 
