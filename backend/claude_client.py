@@ -13,6 +13,7 @@ try:  # pragma: no cover - prefer absolute imports in package context
         parse_ai_response_safely,
         validate_analysis_response,
     )
+    from backend.measurement_analysis import build_measurement_fallback_from_payload
     from backend.config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY
     from backend.detailed_prompt_template import build_simplified_analysis_prompt
     from backend.structured_analyzer import build_structured_data_for_ai
@@ -21,6 +22,9 @@ except ImportError:  # pragma: no cover - fallback for script execution
         from .ai_response_handler import (  # type: ignore
             parse_ai_response_safely,
             validate_analysis_response,
+        )
+        from .measurement_analysis import (  # type: ignore
+            build_measurement_fallback_from_payload,
         )
         from .config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY  # type: ignore
         from .detailed_prompt_template import (  # type: ignore
@@ -31,6 +35,9 @@ except ImportError:  # pragma: no cover - fallback for script execution
         from ai_response_handler import (  # type: ignore
             parse_ai_response_safely,
             validate_analysis_response,
+        )
+        from measurement_analysis import (  # type: ignore
+            build_measurement_fallback_from_payload,
         )
         from config import AI_ANTHROPIC_MODEL, AI_TIMEOUT_S, ANTHROPIC_API_KEY  # type: ignore
         from detailed_prompt_template import (  # type: ignore
@@ -142,6 +149,10 @@ def analyze_with_claude(text: str) -> Dict[str, Any]:
         metadata=structured_metadata,
     )
     prompt = build_simplified_analysis_prompt(structured_payload)
+    fallback_analysis = build_measurement_fallback_from_payload(
+        structured_payload,
+        default_report_id=pdf_path or "claude-analysis",
+    )
 
     client = _get_client()
     message = client.messages.create(
@@ -176,7 +187,10 @@ def analyze_with_claude(text: str) -> Dict[str, Any]:
         text_out = str(message)
 
     raw_text = (text_out or "").strip()
-    parsed_data = parse_ai_response_safely(raw_text)
+    parsed_data = parse_ai_response_safely(
+        raw_text,
+        fallback_data=fallback_analysis,
+    )
 
     if not validate_analysis_response(parsed_data):
         logger.error("Invalid AI response: %s", parsed_data)

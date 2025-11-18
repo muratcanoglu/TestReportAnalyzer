@@ -2,6 +2,7 @@
 """Helpers for parsing and validating AI JSON responses."""
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 import re
@@ -65,7 +66,10 @@ def _try_load_json(candidate: str) -> Optional[Dict[str, Any]]:
     return loaded if isinstance(loaded, dict) else None
 
 
-def parse_ai_response_safely(response_text: str) -> Dict[str, Any]:
+def parse_ai_response_safely(
+    response_text: str,
+    fallback_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Attempt to parse an AI response into JSON with multiple fallbacks."""
 
     raw_text = (response_text or "").strip()
@@ -80,13 +84,52 @@ def parse_ai_response_safely(response_text: str) -> Dict[str, Any]:
     if cleaned_parsed is not None:
         return cleaned_parsed
 
-    logger.warning("Cleaning the AI response was insufficient. Extracting braces content.")
-    extracted = extract_json_from_text(cleaned)
+    logger.warning(
+        "Cleaning the AI response was insufficient. Extracting braces content."
+    )
+    extracted = extract_json_from_text(cleaned or raw_text)
     extracted_parsed = _try_load_json(extracted or "")
     if extracted_parsed is not None:
         return extracted_parsed
 
-    return {"error": "JSON parse failed", "raw": raw_text}
+    if fallback_data:
+        logger.warning(
+            "All JSON parsing strategies failed. Using fallback measurement data."
+        )
+        fallback_payload = deepcopy(fallback_data)
+        ai_summary = extract_plain_text_summary(raw_text)
+        if ai_summary:
+            fallback_payload["ai_summary"] = ai_summary
+        fallback_payload["parsing_status"] = "fallback_used"
+        fallback_payload.setdefault("raw_response_excerpt", raw_text[:500])
+        return fallback_payload
+
+    logger.error("All parsing attempts failed and no fallback data was provided.")
+    return {
+        "error": "AI response could not be parsed",
+        "raw_response": raw_text[:500],
+        "parsing_status": "failed",
+    }
+
+
+def extract_plain_text_summary(response_text: str, max_length: int = 500) -> str:
+    """Return a condensed plain-text summary from an arbitrary AI response string."""
+
+    if not response_text:
+        return ""
+
+    normalized = re.sub(r"\s+", " ", str(response_text).strip())
+    if not normalized:
+        return ""
+
+    if len(normalized) > max_length:
+        normalized = normalized[:max_length].rstrip() + "..."
+
+    if normalized.startswith("{") and normalized.endswith("}"):
+        inner = normalized[1:-1].strip()
+        return inner or normalized
+
+    return normalized
 
 
 def validate_analysis_response(data: Dict[str, Any]) -> bool:
@@ -119,5 +162,6 @@ __all__ = [
     "clean_ai_json_response",
     "extract_json_from_text",
     "parse_ai_response_safely",
+    "extract_plain_text_summary",
     "validate_analysis_response",
 ]
