@@ -149,6 +149,14 @@ export const analyzeReportsWithAI = async (files, engine) => {
   return normalizeAnalyzeFilesResponse(response.data);
 };
 
+export const analyzeArchivedReports = async (reportIds, engine) => {
+  const response = await client.post("/analyze-archived", {
+    report_ids: reportIds,
+    engine: engine,
+  });
+  return normalizeAnalyzeFilesResponse(response.data);
+};
+
 export const downloadReportFile = async (id) => {
   const response = await client.get(`/reports/${id}/download`, {
     responseType: "blob",

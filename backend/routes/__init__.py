@@ -1029,6 +1029,7 @@ def upload_report():
             filename=filename,
             pdf_path=pdf_path,
             test_type=report_type_key,
+            stored_filename=unique_filename,
         )
 
         # İstatistikleri kaydet
@@ -1690,6 +1691,290 @@ def analyze_files_with_ai():
             "summaries": summaries,
             "message": (
                 f"{processed_files} dosya {engine_label} ile analiz edildi. "
+                "Türkçe, İngilizce ve Almanca özetler hazırlandı."
+            ),
+        }
+    )
+
+
+@reports_bp.route("/analyze-archived", methods=["POST"])
+def analyze_archived_reports():
+    """Re-analyze archived reports by their IDs with glob pattern fallback."""
+
+    data = request.get_json(silent=True) or {}
+    report_ids = data.get("report_ids", [])
+
+    if not report_ids or not isinstance(report_ids, list):
+        return _json_error("Analiz için en az bir rapor ID'si gönderin.", 400)
+
+    engine_key, engine_label = _normalise_engine(data.get("engine"))
+
+    summaries = []
+    processed_files = 0
+    uploads_base = Path("uploads")
+
+    with ai_analyzer.temporary_provider(engine_key):
+        for report_id in report_ids:
+            # Get report from database
+            report = database.get_report_by_id(report_id)
+            if not report:
+                logger.warning(f"Report ID {report_id} not found in database")
+                continue
+
+            filename = report.get("filename", f"report-{report_id}.pdf")
+            stored_filename = report.get("stored_filename")
+
+            # Try to find the PDF file
+            pdf_path = None
+
+            # Method 1: Use stored_filename if available
+            if stored_filename:
+                candidate = uploads_base / stored_filename
+                if candidate.exists():
+                    pdf_path = candidate
+                    logger.info(f"Found PDF using stored_filename: {pdf_path}")
+
+            # Method 2: Try pdf_path from database
+            if not pdf_path:
+                db_pdf_path = report.get("pdf_path")
+                if db_pdf_path:
+                    candidate = Path(db_pdf_path)
+                    if candidate.exists():
+                        pdf_path = candidate
+                        logger.info(f"Found PDF using pdf_path: {pdf_path}")
+
+            # Method 3: Glob pattern fallback - find files matching *_filename pattern
+            if not pdf_path:
+                pattern = f"*_{filename}"
+                matches = list(uploads_base.glob(pattern))
+                if matches:
+                    # Use the most recent match
+                    pdf_path = sorted(matches, key=lambda p: p.stat().st_mtime)[-1]
+                    logger.info(f"Found PDF using glob pattern: {pdf_path}")
+
+            if not pdf_path or not pdf_path.exists():
+                logger.error(f"PDF file not found for report ID {report_id}, filename: {filename}")
+                continue
+
+            try:
+                extraction = extract_text_from_pdf(pdf_path)
+                raw_text = (
+                    extraction.get("structured_text")
+                    if isinstance(extraction, dict)
+                    else ""
+                ) or (
+                    extraction.get("text")
+                    if isinstance(extraction, dict)
+                    else str(extraction)
+                )
+                raw_text = str(raw_text or "")
+                parsed_results = parse_test_results(extraction)
+                comprehensive_result = analyze_pdf_comprehensive(pdf_path)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.error(f"PDF analizi başarısız oldu (ID: {report_id}): {exc}")
+                continue
+
+            inferred_report_key, inferred_report_label = infer_report_type(
+                raw_text, filename
+            )
+            report_type_key = (
+                str(comprehensive_result.get("report_type") or inferred_report_key)
+                or "unknown"
+            ).strip()
+            report_type_key = report_type_key.lower() or "unknown"
+            report_type_label = (
+                comprehensive_result.get("report_type_label")
+                or inferred_report_label
+                or _resolve_report_type_label(report_type_key)
+            )
+
+            basic_stats = comprehensive_result.get("basic_stats") or {}
+            structured_tests = basic_stats.get("tests") or []
+            if structured_tests:
+                parsed_results = structured_tests
+
+            def _coerce_stat(value: object, default: int = 0) -> int:
+                try:
+                    return int(value)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    return default
+
+            total_tests = _coerce_stat(
+                basic_stats.get("total_tests"), len(parsed_results)
+            )
+            passed_tests = _coerce_stat(basic_stats.get("passed"), 0)
+            failed_tests = _coerce_stat(basic_stats.get("failed"), 0)
+
+            if total_tests == 0 and parsed_results:
+                total_tests = len(parsed_results)
+            if passed_tests == 0 and total_tests and not structured_tests:
+                passed_tests = sum(1 for result in parsed_results if result.get("status") == "PASS")
+            if failed_tests == 0 and total_tests:
+                failed_tests = total_tests - passed_tests
+
+            processed_files += 1
+            alignment_key = _derive_alignment_key(total_tests, passed_tests, failed_tests)
+            success_rate = (passed_tests / total_tests * 100.0) if total_tests else 0.0
+            success_rate = round(success_rate, 2)
+
+            failure_details = [
+                {
+                    "test_name": result.get("test_name", "Bilinmeyen Test"),
+                    "failure_reason": result.get("failure_reason", ""),
+                    "suggested_fix": result.get("suggested_fix", ""),
+                }
+                for result in parsed_results
+                if result.get("status") == "FAIL"
+            ]
+
+            measurement_params = comprehensive_result.get("measurement_params")
+            comprehensive_analysis = (
+                comprehensive_result.get("comprehensive_analysis") or {}
+            )
+            measurement_analysis_payload = build_measurement_analysis(
+                measurement_params,
+                report_id=filename,
+                test_conditions=comprehensive_analysis.get("test_conditions", ""),
+            )
+            measurement_summary = {
+                "report_id": measurement_analysis_payload.get("report_id", filename),
+                "measured_values": measurement_analysis_payload.get(
+                    "measured_values", {}
+                ),
+                "overall_summary": measurement_analysis_payload.get(
+                    "overall_summary", {}
+                ),
+                "test_conditions_summary": measurement_analysis_payload.get(
+                    "test_conditions_summary", ""
+                ),
+                "data_source": measurement_analysis_payload.get("data_source"),
+            }
+
+            # Generate structured page-by-page analysis
+            structured_page_analysis = None
+            try:
+                pdf_data_for_formatter = {
+                    "filename": filename,
+                    "structured_data": comprehensive_result.get("structured_data", {}),
+                    "comprehensive_analysis": comprehensive_analysis,
+                }
+                structured_page_analysis = format_kielt_report_analysis(
+                    pdf_data=pdf_data_for_formatter,
+                    measurement_params=measurement_params
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("Structured page analysis generation failed: %s", exc)
+
+            fallback_localized = _build_multilingual_summary(
+                engine_label,
+                filename,
+                report_type_label,
+                total_tests,
+                passed_tests,
+                failed_tests,
+                failure_details,
+            )
+
+            try:
+                ai_summary_payload = ai_analyzer.generate_report_summary(
+                    filename=filename,
+                    report_type=report_type_label,
+                    total_tests=total_tests,
+                    passed_tests=passed_tests,
+                    failed_tests=failed_tests,
+                    raw_text=raw_text,
+                    failure_details=failure_details,
+                    structured_data=comprehensive_analysis,
+                    fallback_data=measurement_analysis_payload,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("AI özet oluşturma başarısız: %s", exc)
+                ai_summary_payload = {"error": str(exc)}
+
+            raw_ai_summary = ""
+            ai_summary_mode = "structured"
+            if isinstance(ai_summary_payload, dict):
+                raw_ai_summary = str(
+                    ai_summary_payload.get("raw_text")
+                    or ai_summary_payload.get("raw")
+                    or ai_summary_payload.get("_raw_response_text")
+                    or ""
+                ).strip()
+                if ai_summary_payload.get("mode") == "plain-text" or ai_summary_payload.get("error"):
+                    ai_summary_mode = "plain-text"
+
+            localized_summaries = _merge_localized_summaries(
+                fallback_localized,
+                (ai_summary_payload or {}).get("localized_summaries") if ai_summary_payload else None,
+                translator=ai_analyzer,
+            )
+
+            fallback_sections = _build_structured_sections_from_text(
+                raw_text,
+                total_tests,
+                passed_tests,
+                failed_tests,
+                failure_details,
+                report_type_label,
+            )
+            structured_sections = _merge_structured_sections(
+                fallback_sections,
+                (ai_summary_payload or {}).get("sections") if ai_summary_payload else None,
+                translator=ai_analyzer,
+            )
+
+            fallback_highlights = _build_highlights_from_data(
+                total_tests,
+                passed_tests,
+                failed_tests,
+                failure_details,
+                report_type_label,
+            )
+            analysis_highlights = _merge_highlights(
+                fallback_highlights,
+                (ai_summary_payload or {}).get("highlights") if ai_summary_payload else None,
+            )
+
+            base_summary = localized_summaries["tr"]["summary"]
+            conditions_text = localized_summaries["tr"].get("conditions", "")
+            improvements_text = localized_summaries["tr"].get("improvements", "")
+
+            summaries.append(
+                {
+                    "filename": filename,
+                    "total_tests": total_tests,
+                    "passed_tests": passed_tests,
+                    "failed_tests": failed_tests,
+                    "engine": engine_label,
+                    "engine_key": engine_key,
+                    "summary": base_summary,
+                    "condition_evaluation": conditions_text,
+                    "improvement_overview": improvements_text,
+                    "localized_summaries": localized_summaries,
+                    "report_type": report_type_key,
+                    "report_type_label": report_type_label,
+                    "alignment": alignment_key,
+                    "success_rate": success_rate,
+                    "failures": failure_details,
+                    "structured_sections": structured_sections,
+                    "highlights": analysis_highlights,
+                    "ai_raw_summary": raw_ai_summary,
+                    "ai_summary_mode": ai_summary_mode,
+                    "measurement_analysis": measurement_summary,
+                    "structured_page_analysis": structured_page_analysis,
+                }
+            )
+
+    if processed_files == 0:
+        return _json_error("Analiz için geçerli PDF dosyası bulunamadı.", 404)
+
+    return jsonify(
+        {
+            "engine": engine_label,
+            "engine_key": engine_key,
+            "summaries": summaries,
+            "message": (
+                f"{processed_files} arşivlenmiş dosya {engine_label} ile yeniden analiz edildi. "
                 "Türkçe, İngilizce ve Almanca özetler hazırlandı."
             ),
         }
