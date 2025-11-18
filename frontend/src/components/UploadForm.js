@@ -127,9 +127,14 @@ const UploadForm = ({
           [selectedFile],
           analysisEngine
         );
+        const summaryCount = Array.isArray(analysisResult?.summaries)
+          ? analysisResult.summaries.length
+          : 0;
         const message =
           analysisResult?.message ||
-          `${engineLabel} analizi başarıyla tamamlandı.`;
+          (summaryCount
+            ? `${engineLabel} ${summaryCount} özet hazırladı.`
+            : `${engineLabel} analizi başarıyla tamamlandı.`);
         setAnalysisMessage(message);
         onAnalysisComplete?.(analysisResult, {
           engineKey: analysisEngine,

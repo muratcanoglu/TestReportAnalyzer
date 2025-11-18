@@ -164,6 +164,14 @@ const TestReportsBoard = ({ title, reports, analysisEngine, onAnalysisComplete }
       );
 
       const result = await analyzeReportsWithAI(files, analysisEngine);
+      const summaryCount = Array.isArray(result?.summaries)
+        ? result.summaries.length
+        : 0;
+      const successMessage =
+        result?.message ||
+        (summaryCount
+          ? `${summaryCount} özet başarıyla oluşturuldu.`
+          : `${selectedIds.length} rapor başarıyla analiz edildi.`);
       const entryFromParent = onAnalysisComplete?.(result, {
         source: title,
         engineKey: analysisEngine,
@@ -178,9 +186,7 @@ const TestReportsBoard = ({ title, reports, analysisEngine, onAnalysisComplete }
       }
 
       if (isMountedRef.current) {
-        setActionMessage(
-          result?.message || `${selectedIds.length} rapor başarıyla analiz edildi.`
-        );
+        setActionMessage(successMessage);
         setSelectedIds([]);
       }
     } catch (error) {

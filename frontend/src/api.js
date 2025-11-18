@@ -38,6 +38,23 @@ const client = axios.create({
   baseURL: API_BASE,
 });
 
+const normalizeAnalyzeFilesResponse = (payload) => {
+  if (!payload || typeof payload !== "object") {
+    return { engine: "", engine_key: "", message: "", summaries: [] };
+  }
+
+  const summaries = Array.isArray(payload.summaries)
+    ? payload.summaries
+    : payload.summary
+    ? [payload.summary]
+    : [];
+
+  return {
+    ...payload,
+    summaries,
+  };
+};
+
 client.interceptors.response.use(
   (response) => {
     debugLog(
@@ -129,7 +146,7 @@ export const analyzeReportsWithAI = async (files, engine) => {
   formData.append("engine", engine);
 
   const response = await client.post("/analyze-files", formData);
-  return response.data;
+  return normalizeAnalyzeFilesResponse(response.data);
 };
 
 export const downloadReportFile = async (id) => {

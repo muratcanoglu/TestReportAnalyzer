@@ -489,13 +489,19 @@ const ArchiveManagement = ({
       );
 
       const result = await analyzeReportsWithAI(files, analysisEngine);
+      const summaryCount = Array.isArray(result?.summaries)
+        ? result.summaries.length
+        : 0;
 
       onAnalysisComplete?.(result, { source: "archive", engineKey: analysisEngine });
 
       setArchiveActionFeedback({
         type: "success",
         message:
-          result?.message || `${selectedArchiveIds.length} rapor başarıyla analiz edildi.`,
+          result?.message ||
+          (summaryCount
+            ? `${summaryCount} özet başarıyla oluşturuldu.`
+            : `${selectedArchiveIds.length} rapor başarıyla analiz edildi.`),
       });
       setSelectedArchiveIds([]);
     } catch (error) {
