@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   analyzeReportsWithAI,
+  analyzeArchivedReports,
   compareReports,
   downloadReportFile,
   getReportDownloadUrl,
@@ -476,19 +477,7 @@ const ArchiveManagement = ({
     });
 
     try {
-      const files = await Promise.all(
-        selectedArchiveIds.map(async (id) => {
-          const report = reports.find((item) => item.id === id);
-          if (!report) {
-            throw new Error("Seçilen rapor bulunamadı.");
-          }
-          const blob = await downloadReportFile(id);
-          const filename = report.filename || `report-${id}.pdf`;
-          return createFileLike(blob, filename);
-        })
-      );
-
-      const result = await analyzeReportsWithAI(files, analysisEngine);
+      const result = await analyzeArchivedReports(selectedArchiveIds, analysisEngine);
       const summaryCount = Array.isArray(result?.summaries)
         ? result.summaries.length
         : 0;
@@ -513,7 +502,7 @@ const ArchiveManagement = ({
     } finally {
       setIsArchiveProcessing(false);
     }
-  }, [analysisEngine, engineLabel, isArchiveProcessing, onAnalysisComplete, reports, selectedArchiveIds]);
+  }, [analysisEngine, engineLabel, isArchiveProcessing, onAnalysisComplete, selectedArchiveIds]);
 
   const handleViewSelected = useCallback(() => {
     if (selectedArchiveIds.length !== 1) {

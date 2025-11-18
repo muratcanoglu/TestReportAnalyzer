@@ -46,6 +46,7 @@ def init_db() -> None:
             ("analysis_language", "TEXT DEFAULT 'tr'"),
             ("structured_data", "TEXT"),
             ("table_count", "INTEGER DEFAULT 0"),
+            ("stored_filename", "TEXT"),
         ):
             try:
                 conn.execute(f"ALTER TABLE reports ADD COLUMN {column} {definition}")
@@ -59,12 +60,17 @@ def insert_report(
     pdf_path: str,
     test_type: str = "unknown",
     comprehensive_analysis: Optional[Dict[str, str]] = None,
+    stored_filename: Optional[str] = None,
 ) -> int:
     """Insert a new report record and return its ID."""
     normalized_type = (test_type or "unknown").strip().lower()
     with closing(_connect()) as conn:
         columns = ["filename", "pdf_path", "test_type"]
         values: List[object] = [filename, pdf_path, normalized_type]
+
+        if stored_filename:
+            columns.append("stored_filename")
+            values.append(stored_filename)
 
         if comprehensive_analysis:
             columns.extend(
@@ -197,7 +203,8 @@ def get_report_by_id(report_id: int) -> Optional[Dict]:
                 improvement_suggestions,
                 analysis_language,
                 structured_data,
-                table_count
+                table_count,
+                stored_filename
             FROM reports
             WHERE id = ?
             """,
