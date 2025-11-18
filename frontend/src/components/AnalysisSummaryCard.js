@@ -5,6 +5,7 @@ import {
   SUMMARY_SECTION_LABELS,
   STRUCTURED_SECTION_LABELS,
 } from "../utils/analysisUtils";
+import DetailedAnalysisDisplay from "./DetailedAnalysisDisplay";
 
 const PLACEHOLDER_TEXT = {
   tr: "İçerik bulunamadı.",
@@ -398,6 +399,12 @@ const AnalysisSummaryCard = ({
                             )}
                           </div>
                         </details>
+                        {item.structured_page_analysis && (
+                          <DetailedAnalysisDisplay
+                            analysis={item.structured_page_analysis}
+                            filename={item.filename}
+                          />
+                        )}
                       </li>
                     );
                   })}

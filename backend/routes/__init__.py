@@ -26,6 +26,7 @@ try:  # pragma: no cover - prefer absolute imports
     from backend.ai_analyzer import ai_analyzer
     from backend.translation_utils import fallback_translate_text
     from backend.measurement_analysis import build_measurement_analysis
+    from backend.structured_report_formatter import format_kielt_report_analysis
     from backend.pdf_analyzer import (
         REPORT_TYPE_LABELS,
         analyze_pdf_comprehensive,
@@ -49,6 +50,7 @@ except ImportError:  # pragma: no cover - fallback for script execution
         from ..ai_analyzer import ai_analyzer  # type: ignore
         from ..translation_utils import fallback_translate_text  # type: ignore
         from ..measurement_analysis import build_measurement_analysis  # type: ignore
+        from ..structured_report_formatter import format_kielt_report_analysis  # type: ignore
         from ..pdf_analyzer import (  # type: ignore
             REPORT_TYPE_LABELS,
             analyze_pdf_comprehensive,
@@ -71,6 +73,7 @@ except ImportError:  # pragma: no cover - fallback for script execution
         from ai_analyzer import ai_analyzer  # type: ignore
         from translation_utils import fallback_translate_text  # type: ignore
         from measurement_analysis import build_measurement_analysis  # type: ignore
+        from structured_report_formatter import format_kielt_report_analysis  # type: ignore
         from pdf_analyzer import (  # type: ignore
             REPORT_TYPE_LABELS,
             analyze_pdf_comprehensive,
@@ -1561,6 +1564,22 @@ def analyze_files_with_ai():
                 "data_source": measurement_analysis_payload.get("data_source"),
             }
 
+            # Generate structured page-by-page analysis
+            structured_page_analysis = None
+            try:
+                # Build PDF data structure for formatter
+                pdf_data_for_formatter = {
+                    "filename": filename,
+                    "structured_data": comprehensive_result.get("structured_data", {}),
+                    "comprehensive_analysis": comprehensive_analysis,
+                }
+                structured_page_analysis = format_kielt_report_analysis(
+                    pdf_data=pdf_data_for_formatter,
+                    measurement_params=measurement_params
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("Structured page analysis generation failed: %s", exc)
+
             fallback_localized = _build_multilingual_summary(
                 engine_label,
                 filename,
@@ -1657,6 +1676,7 @@ def analyze_files_with_ai():
                     "ai_raw_summary": raw_ai_summary,
                     "ai_summary_mode": ai_summary_mode,
                     "measurement_analysis": measurement_summary,
+                    "structured_page_analysis": structured_page_analysis,
                 }
             )
 
