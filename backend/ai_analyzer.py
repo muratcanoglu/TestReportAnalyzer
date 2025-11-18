@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """AI destekli test hatası analizi yardımcı sınıfı."""
 
-import json
 import logging
 import os
 import re
@@ -17,11 +16,14 @@ from dotenv import load_dotenv
 
 try:  # pragma: no cover - prefer absolute imports within package context
     from backend.structured_data_parser import format_structured_data_for_ai
+    from backend.ai_response_handler import parse_ai_response_safely
 except ImportError:  # pragma: no cover - fallback for script execution
     try:
         from .structured_data_parser import format_structured_data_for_ai  # type: ignore
+        from .ai_response_handler import parse_ai_response_safely  # type: ignore
     except ImportError:  # pragma: no cover - running from repository root
         from structured_data_parser import format_structured_data_for_ai  # type: ignore
+        from ai_response_handler import parse_ai_response_safely  # type: ignore
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
@@ -305,7 +307,11 @@ class AIAnalyzer:
         if not content:
             raise ValueError("Claude yanıtı boş döndü")
 
-        return json.loads(content)
+        parsed = parse_ai_response_safely(content)
+        stripped = content.strip()
+        if stripped:
+            parsed.setdefault("_raw_response_text", stripped)
+        return parsed
 
     def _request_json_from_chatgpt(self, prompt: str, max_tokens: Optional[int] = None) -> Dict:
         """OpenAI Chat Completions API çağrısından JSON yanıtı döndür."""
@@ -333,7 +339,11 @@ class AIAnalyzer:
         if not content:
             raise ValueError("ChatGPT yanıtı boş döndü")
 
-        return json.loads(content)
+        parsed = parse_ai_response_safely(content)
+        stripped = content.strip()
+        if stripped:
+            parsed.setdefault("_raw_response_text", stripped)
+        return parsed
 
     def request_text_completion(self, prompt: str, *, max_tokens: Optional[int] = None) -> Optional[str]:
         """Return a plain-text completion using the configured AI provider if possible."""
@@ -761,6 +771,51 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
                     normalised[language] = value_str
         return normalised
 
+    def _parse_plain_text_translations(
+        self, raw_text: str, target_languages: Sequence[str]
+    ) -> Dict[str, str]:
+        """Attempt to extract translations from a plain-text AI response."""
+
+        cleaned = (raw_text or "").strip()
+        if not cleaned:
+            return {}
+
+        aliases = {
+            "turkish": "tr",
+            "english": "en",
+            "german": "de",
+            "deutsch": "de",
+            "almanca": "de",
+            "türkçe": "tr",
+            "ingilizce": "en",
+        }
+        pattern = re.compile(r"^\s*([a-zA-ZçğıöşüÄÖÜß]+)\s*[:\-]\s*(.+)$")
+        translations: Dict[str, str] = {}
+        allowed_targets = {str(lang).strip().lower() for lang in target_languages}
+
+        for line in cleaned.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            match = pattern.match(stripped)
+            if not match:
+                continue
+            label = match.group(1).strip().lower()
+            value = match.group(2).strip()
+            language_key = aliases.get(label, label)
+            if language_key in allowed_targets and value:
+                translations[language_key] = value
+
+        if translations:
+            return translations
+
+        # If the provider responded with a single translation text, attach it to the first target.
+        primary = next(iter(allowed_targets), None)
+        if primary and cleaned:
+            translations[primary] = cleaned
+
+        return translations
+
     def translate_texts(
         self,
         text: str,
@@ -805,6 +860,16 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
                 if not isinstance(data, dict):
                     continue
                 translations = self._parse_translation_response(data, targets)
+                if not translations:
+                    raw_text = str(
+                        data.get("_raw_response_text")
+                        or data.get("raw")
+                        or ""
+                    )
+                    if raw_text:
+                        translations = self._parse_plain_text_translations(
+                            raw_text, targets
+                        )
                 if translations:
                     self._translation_cache[cache_key] = dict(translations)
                     return translations
@@ -862,6 +927,39 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
             "highlights": normalised_highlights,
         }
 
+    def _build_plain_text_summary_payload(self, raw_text: str) -> Optional[Dict[str, object]]:
+        """Create a minimal summary payload using a plain-text AI response."""
+
+        cleaned = (raw_text or "").strip()
+        if not cleaned:
+            return None
+
+        summary_text = _summarise_sentences(cleaned, max_sentences=4, max_chars=800)
+        paragraphs = [line.strip(" \t-•") for line in cleaned.splitlines() if line.strip()]
+        highlights = paragraphs[:5] if paragraphs else [summary_text]
+
+        localized: Dict[str, Dict[str, str]] = {}
+        for language, labels in DEFAULT_SUMMARY_LABELS.items():
+            localized[language] = {
+                "summary": summary_text or paragraphs[0] if paragraphs else cleaned,
+                "conditions": paragraphs[1] if len(paragraphs) > 1 else "",
+                "improvements": paragraphs[2] if len(paragraphs) > 2 else "",
+                "labels": labels,
+            }
+
+        sections: Dict[str, str] = {}
+        if len(paragraphs) > 3:
+            sections["comments"] = " ".join(paragraphs[3:])
+
+        payload: Dict[str, object] = {
+            "localized_summaries": localized,
+            "sections": sections,
+            "highlights": [item for item in highlights if item],
+            "raw_text": cleaned,
+            "mode": "plain-text",
+        }
+        return payload
+
     def generate_report_summary(
         self,
         *,
@@ -911,7 +1009,20 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
                     data = self._request_json_from_chatgpt(prompt, max_tokens=min(self.max_tokens * 2, 1500))
                 if not isinstance(data, dict):
                     continue
-                return self._normalise_summary_response(data)
+                raw_text = str(
+                    data.get("raw")
+                    or data.get("_raw_response_text")
+                    or ""
+                )
+                if data.get("error") and raw_text:
+                    plain_payload = self._build_plain_text_summary_payload(raw_text)
+                    if plain_payload:
+                        return plain_payload
+                    continue
+                normalised = self._normalise_summary_response(data)
+                if raw_text and isinstance(normalised, dict):
+                    normalised.setdefault("raw_text", raw_text)
+                return normalised
             except Exception as exc:  # pragma: no cover - ağ hataları raporlanmaz
                 print(f"[AIAnalyzer] Rapor özeti üretilemedi ({candidate}): {exc}")
 

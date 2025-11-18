@@ -1520,6 +1520,18 @@ def analyze_files_with_ai():
                 failure_details=failure_details,
             )
 
+            raw_ai_summary = ""
+            ai_summary_mode = "structured"
+            if isinstance(ai_summary_payload, dict):
+                raw_ai_summary = str(
+                    ai_summary_payload.get("raw_text")
+                    or ai_summary_payload.get("raw")
+                    or ai_summary_payload.get("_raw_response_text")
+                    or ""
+                ).strip()
+                if ai_summary_payload.get("mode") == "plain-text" or ai_summary_payload.get("error"):
+                    ai_summary_mode = "plain-text"
+
             localized_summaries = _merge_localized_summaries(
                 fallback_localized,
                 (ai_summary_payload or {}).get("localized_summaries") if ai_summary_payload else None,
@@ -1575,6 +1587,8 @@ def analyze_files_with_ai():
                     "failures": failure_details,
                     "structured_sections": structured_sections,
                     "highlights": analysis_highlights,
+                    "ai_raw_summary": raw_ai_summary,
+                    "ai_summary_mode": ai_summary_mode,
                 }
             )
 
