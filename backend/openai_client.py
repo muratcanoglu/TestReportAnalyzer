@@ -15,6 +15,7 @@ try:  # pragma: no cover - prefer absolute imports under package execution
     )
     from backend.config import AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY
     from backend.detailed_prompt_template import build_simplified_analysis_prompt
+    from backend.measurement_analysis import build_measurement_fallback_from_payload
     from backend.structured_analyzer import build_structured_data_for_ai
 except ImportError:  # pragma: no cover - fallback for script execution
     try:
@@ -26,6 +27,9 @@ except ImportError:  # pragma: no cover - fallback for script execution
         from .detailed_prompt_template import (  # type: ignore
             build_simplified_analysis_prompt,
         )
+        from .measurement_analysis import (  # type: ignore
+            build_measurement_fallback_from_payload,
+        )
         from .structured_analyzer import build_structured_data_for_ai  # type: ignore
     except ImportError:  # pragma: no cover - running from repository root
         from ai_response_handler import (  # type: ignore
@@ -35,6 +39,9 @@ except ImportError:  # pragma: no cover - fallback for script execution
         from config import AI_OPENAI_MODEL, AI_TIMEOUT_S, OPENAI_API_KEY  # type: ignore
         from detailed_prompt_template import (  # type: ignore
             build_simplified_analysis_prompt,
+        )
+        from measurement_analysis import (  # type: ignore
+            build_measurement_fallback_from_payload,
         )
         from structured_analyzer import build_structured_data_for_ai  # type: ignore
 
@@ -143,6 +150,10 @@ def analyze_with_openai(text: str) -> Dict[str, Any]:
         metadata=structured_metadata,
     )
     prompt = build_simplified_analysis_prompt(structured_payload)
+    measurement_fallback = build_measurement_fallback_from_payload(
+        structured_payload,
+        default_report_id=pdf_path or "openai-analysis",
+    )
 
     client = _get_client()
     model_name = AI_OPENAI_MODEL or PREFERRED_OPENAI_MODELS[0]
@@ -194,7 +205,10 @@ def analyze_with_openai(text: str) -> Dict[str, Any]:
             output_text = str(response)
 
     raw_text = (output_text or "").strip()
-    parsed_data = parse_ai_response_safely(raw_text)
+    parsed_data = parse_ai_response_safely(
+        raw_text,
+        fallback_data=measurement_fallback,
+    )
 
     if not validate_analysis_response(parsed_data):
         logger.error("Invalid AI response: %s", parsed_data)
