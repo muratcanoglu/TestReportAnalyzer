@@ -146,10 +146,10 @@ const HomeSection = ({
       </div>
       <AnalysisSummaryCard
         analyses={recentAnalyses}
-        title="Analiz Özeti"
+        title="Analiz Özeti - Son Yüklenen Rapor"
         introText={
           recentAnalyses.length > 0
-            ? "Son gerçekleştirilen en fazla iki AI analizi aşağıda listelenmiştir."
+            ? "Son yüklenen raporun AI analiz sonuçları aşağıda gösterilmektedir. Önceki analizler için Arşiv Yönetimi sayfasını ziyaret edin."
             : "AI analizi gerçekleştirmek için PDF seçip 'PDF Yükle ve AI ile Analiz Et' butonuna tıklayın."
         }
       />
