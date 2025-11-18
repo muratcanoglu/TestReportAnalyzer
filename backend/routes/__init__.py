@@ -1580,6 +1580,8 @@ def analyze_files_with_ai():
                     failed_tests=failed_tests,
                     raw_text=raw_text,
                     failure_details=failure_details,
+                    structured_data=comprehensive_analysis,
+                    fallback_data=measurement_analysis_payload,
                 )
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.warning("AI özet oluşturma başarısız: %s", exc)
