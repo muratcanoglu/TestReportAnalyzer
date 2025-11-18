@@ -94,7 +94,7 @@ const App = () => {
     setAnalysisHistory([]);
   }, []);
 
-  const recentAnalyses = useMemo(() => analysisHistory.slice(0, 2), [analysisHistory]);
+  const recentAnalyses = useMemo(() => analysisHistory.slice(0, 1), [analysisHistory]);
   const archivedAnalyses = useMemo(() => [...analysisHistory], [analysisHistory]);
 
   const filteredReports = useMemo(() => {
