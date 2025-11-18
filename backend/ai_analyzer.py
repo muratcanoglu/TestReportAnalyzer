@@ -282,7 +282,13 @@ class AIAnalyzer:
             print(f"[AIAnalyzer] ChatGPT analizi başarısız: {exc}")
             return self._rule_based_analysis(error_message)
 
-    def _request_json_from_claude(self, prompt: str, max_tokens: Optional[int] = None) -> Dict:
+    def _request_json_from_claude(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        *,
+        fallback_data: Optional[Dict[str, object]] = None,
+    ) -> Dict:
         """Claude API'sinden JSON içerik döndür."""
         if not self.claude_client:
             raise ValueError("Claude client not configured")
@@ -307,13 +313,19 @@ class AIAnalyzer:
         if not content:
             raise ValueError("Claude yanıtı boş döndü")
 
-        parsed = parse_ai_response_safely(content)
+        parsed = parse_ai_response_safely(content, fallback_data=fallback_data)
         stripped = content.strip()
         if stripped:
             parsed.setdefault("_raw_response_text", stripped)
         return parsed
 
-    def _request_json_from_chatgpt(self, prompt: str, max_tokens: Optional[int] = None) -> Dict:
+    def _request_json_from_chatgpt(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        *,
+        fallback_data: Optional[Dict[str, object]] = None,
+    ) -> Dict:
         """OpenAI Chat Completions API çağrısından JSON yanıtı döndür."""
         if not self.openai_client:
             raise ValueError("ChatGPT client not configured")
@@ -339,7 +351,7 @@ class AIAnalyzer:
         if not content:
             raise ValueError("ChatGPT yanıtı boş döndü")
 
-        parsed = parse_ai_response_safely(content)
+        parsed = parse_ai_response_safely(content, fallback_data=fallback_data)
         stripped = content.strip()
         if stripped:
             parsed.setdefault("_raw_response_text", stripped)
@@ -440,6 +452,66 @@ class AIAnalyzer:
         middle = cleaned[middle_start:middle_end]
 
         return "\n…\n".join([head.strip(), middle.strip(), tail.strip()])
+
+    def _build_measurement_fallback_payload(
+        self,
+        *,
+        structured_data: Optional[Dict[str, object]],
+        default_report_id: str,
+        provided_fallback: Optional[Dict[str, object]] = None,
+    ) -> Optional[Dict[str, object]]:
+        """Create a measurement-based fallback payload if possible."""
+
+        if provided_fallback:
+            return provided_fallback
+
+        if not structured_data:
+            return None
+
+        try:
+            try:
+                from backend.measurement_analysis import (
+                    build_measurement_analysis,
+                    build_measurement_fallback_from_payload,
+                )
+            except ImportError:
+                try:
+                    from .measurement_analysis import (  # type: ignore
+                        build_measurement_analysis,
+                        build_measurement_fallback_from_payload,
+                    )
+                except ImportError:
+                    from measurement_analysis import (  # type: ignore
+                        build_measurement_analysis,
+                        build_measurement_fallback_from_payload,
+                    )
+
+            measurement_params = (
+                structured_data.get("raw_measurements")
+                or structured_data.get("measurement_params")
+            )
+            if measurement_params:
+                test_conditions = structured_data.get("test_conditions", "")
+                report_id = (
+                    structured_data.get("report_id")
+                    or structured_data.get("document_id")
+                    or default_report_id
+                )
+                return build_measurement_analysis(
+                    measurement_params,
+                    report_id=report_id,
+                    test_conditions=test_conditions,
+                )
+
+            return build_measurement_fallback_from_payload(
+                structured_payload=structured_data,
+                default_report_id=default_report_id,
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug(
+                "Measurement fallback payload oluşturulamadı: %s", exc
+            )
+            return None
 
     def _create_report_summary_prompt(
         self,
@@ -971,6 +1043,7 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
         raw_text: str,
         failure_details: Sequence[Dict[str, str]],
         structured_data: Optional[Dict[str, object]] = None,
+        fallback_data: Optional[Dict[str, object]] = None,
     ) -> Optional[Dict[str, object]]:
         """PDF metnini detaylı şekilde inceleyen bir özet üret.
 
@@ -995,6 +1068,12 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
             structured_data=structured_data,
         )
 
+        measurement_fallback = self._build_measurement_fallback_payload(
+            structured_data=structured_data,
+            default_report_id=filename,
+            provided_fallback=fallback_data,
+        )
+
         providers: List[str]
         if provider == "both":
             providers = ["claude", "chatgpt"]
@@ -1004,9 +1083,17 @@ Tüm metinleri ilgili dilde üret. JSON dışında açıklama yapma.
         for candidate in providers:
             try:
                 if candidate == "claude":
-                    data = self._request_json_from_claude(prompt, max_tokens=min(self.max_tokens * 2, 1500))
+                    data = self._request_json_from_claude(
+                        prompt,
+                        max_tokens=min(self.max_tokens * 2, 1500),
+                        fallback_data=measurement_fallback,
+                    )
                 else:
-                    data = self._request_json_from_chatgpt(prompt, max_tokens=min(self.max_tokens * 2, 1500))
+                    data = self._request_json_from_chatgpt(
+                        prompt,
+                        max_tokens=min(self.max_tokens * 2, 1500),
+                        fallback_data=measurement_fallback,
+                    )
                 if not isinstance(data, dict):
                     continue
                 raw_text = str(
