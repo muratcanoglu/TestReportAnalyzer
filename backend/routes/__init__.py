@@ -871,6 +871,189 @@ def _build_localized_comparison_summary(
     return summaries
 
 
+def _compare_kielt_page2_metadata(first_pdf_path: Path, second_pdf_path: Path) -> dict:
+    """Compare Page 2 metadata from two Kielt reports."""
+    try:
+        from backend.kielt_parser import parse_page_2_metadata
+    except ImportError:
+        try:
+            from kielt_parser import parse_page_2_metadata
+        except ImportError:
+            logger.warning("kielt_parser not available for metadata comparison")
+            return {"error": "kielt_parser module not found"}
+
+    try:
+        first_metadata = parse_page_2_metadata(first_pdf_path)
+        second_metadata = parse_page_2_metadata(second_pdf_path)
+
+        if "error" in first_metadata or "error" in second_metadata:
+            return {"error": "Could not parse Page 2 metadata"}
+
+        # Compare simple fields
+        simple_fields_comparison = {}
+        for field in ["auftraggeber", "anwesende", "versuchsbedingungen", "examiner"]:
+            first_val = first_metadata.get(field, "")
+            second_val = second_metadata.get(field, "")
+            simple_fields_comparison[field] = {
+                "first": first_val,
+                "second": second_val,
+                "identical": first_val == second_val
+            }
+
+        # Compare Prüfling (test object)
+        first_pruefling = first_metadata.get("pruefling", {})
+        second_pruefling = second_metadata.get("pruefling", {})
+        pruefling_comparison = {}
+
+        for field in ["bezeichnung", "hersteller", "typ"]:
+            first_val = first_pruefling.get(field, "")
+            second_val = second_pruefling.get(field, "")
+            pruefling_comparison[field] = {
+                "first": first_val,
+                "second": second_val,
+                "identical": first_val == second_val
+            }
+
+        # Compare mounting sections
+        for mount_key in ["hinten_montiert", "vorne_montiert"]:
+            first_mount = first_pruefling.get(mount_key, {})
+            second_mount = second_pruefling.get(mount_key, {})
+            mount_comparison = {}
+
+            all_keys = set(first_mount.keys()) | set(second_mount.keys())
+            for key in all_keys:
+                first_val = first_mount.get(key, "")
+                second_val = second_mount.get(key, "")
+                mount_comparison[key] = {
+                    "first": first_val,
+                    "second": second_val,
+                    "identical": first_val == second_val
+                }
+
+            pruefling_comparison[mount_key] = mount_comparison
+
+        # Compare Lehnen-Winkel table (most critical!)
+        first_angles = first_metadata.get("lehnen_winkel_table", {})
+        second_angles = second_metadata.get("lehnen_winkel_table", {})
+
+        angle_comparison = {}
+        for row in ["vorher", "nachher"]:
+            first_row = first_angles.get(row, {})
+            second_row = second_angles.get(row, {})
+
+            row_comparison = {}
+            for position in ["hinten_links", "hinten_rechts", "vorne_links", "vorne_rechts"]:
+                first_val = first_row.get(position)
+                second_val = second_row.get(position)
+
+                identical = False
+                if first_val is not None and second_val is not None:
+                    identical = abs(first_val - second_val) < 0.1  # 0.1 degree tolerance
+                elif first_val is None and second_val is None:
+                    identical = True
+
+                row_comparison[position] = {
+                    "first": first_val,
+                    "second": second_val,
+                    "identical": identical,
+                    "difference": abs(first_val - second_val) if (first_val is not None and second_val is not None) else None
+                }
+
+            angle_comparison[row] = row_comparison
+
+        # Compare Prüfergebnis
+        first_ergebnis = first_metadata.get("pruefergebnis", {})
+        second_ergebnis = second_metadata.get("pruefergebnis", {})
+
+        ergebnis_comparison = {}
+        for field in ["ergebnis", "freigabe", "pruefer", "datum"]:
+            first_val = first_ergebnis.get(field, "")
+            second_val = second_ergebnis.get(field, "")
+            ergebnis_comparison[field] = {
+                "first": first_val,
+                "second": second_val,
+                "identical": first_val == second_val
+            }
+
+        # Dummy prüfung details
+        first_dummy = first_ergebnis.get("dummypruefung", {})
+        second_dummy = second_ergebnis.get("dummypruefung", {})
+        dummy_comparison = {}
+
+        for field in ["dummy_checks", "rueckhaltung", "kanten", "bemerkung"]:
+            first_val = first_dummy.get(field, "")
+            second_val = second_dummy.get(field, "")
+            dummy_comparison[field] = {
+                "first": first_val,
+                "second": second_val,
+                "identical": first_val == second_val
+            }
+
+        ergebnis_comparison["dummypruefung"] = dummy_comparison
+
+        # Calculate overall statistics
+        total_fields = 0
+        identical_fields = 0
+        critical_differences = 0
+
+        # Count simple fields
+        for field_data in simple_fields_comparison.values():
+            total_fields += 1
+            if field_data["identical"]:
+                identical_fields += 1
+
+        # Count Prüfling fields
+        for field, data in pruefling_comparison.items():
+            if field in ["hinten_montiert", "vorne_montiert"]:
+                for subfield_data in data.values():
+                    total_fields += 1
+                    if subfield_data["identical"]:
+                        identical_fields += 1
+            else:
+                total_fields += 1
+                if data["identical"]:
+                    identical_fields += 1
+
+        # Count angle differences (critical!)
+        for row_data in angle_comparison.values():
+            for position_data in row_data.values():
+                total_fields += 1
+                if position_data["identical"]:
+                    identical_fields += 1
+                else:
+                    critical_differences += 1
+
+        # Count Prüfergebnis fields
+        for field, data in ergebnis_comparison.items():
+            if field == "dummypruefung":
+                for subfield_data in data.values():
+                    total_fields += 1
+                    if subfield_data["identical"]:
+                        identical_fields += 1
+            else:
+                total_fields += 1
+                if data["identical"]:
+                    identical_fields += 1
+
+        metadata_similarity = (identical_fields / total_fields * 100.0) if total_fields > 0 else 0.0
+
+        return {
+            "metadata_similarity": round(metadata_similarity, 1),
+            "total_fields_compared": total_fields,
+            "identical_fields": identical_fields,
+            "different_fields": total_fields - identical_fields,
+            "critical_differences": critical_differences,
+            "simple_fields": simple_fields_comparison,
+            "pruefling": pruefling_comparison,
+            "lehnen_winkel": angle_comparison,
+            "pruefergebnis": ergebnis_comparison
+        }
+
+    except Exception as exc:
+        logger.exception("Failed to compare Kielt Page 2 metadata: %s", exc)
+        return {"error": str(exc)}
+
+
 def _build_multilingual_summary(
     engine_label: str,
     filename: str,
@@ -1325,6 +1508,14 @@ def compare_reports():
         "test_differences": structured_differences,
         "difference_summary": localized_difference_summary,
     }
+
+    # Check if both reports are Kielt R80 reports
+    first_test_type = first_report.get("test_type", "").lower()
+    second_test_type = second_report.get("test_type", "").lower()
+
+    if first_test_type == "r80" and second_test_type == "r80":
+        page2_comparison = _compare_kielt_page2_metadata(first_path, second_path)
+        response_payload["page_2_comparison"] = page2_comparison
 
     return jsonify(response_payload)
 

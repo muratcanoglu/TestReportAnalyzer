@@ -1,0 +1,152 @@
+.comparison-detail-view {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.comparison-summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #28a745;
+}
+
+.stat-value.critical {
+  color: #dc3545;
+}
+
+.comparison-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.comparison-section {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.comparison-section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #212529;
+  border-bottom: 2px solid #007bff;
+  padding-bottom: 0.5rem;
+}
+
+.comparison-section h4 {
+  color: #dc3545;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.comparison-table thead {
+  background: #f8f9fa;
+}
+
+.comparison-table th {
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #495057;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.comparison-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.comparison-table tr.identical {
+  background: #d4edda;
+}
+
+.comparison-table tr.different {
+  background: #fff3cd;
+}
+
+.comparison-table tr.different-critical {
+  background: #f8d7da;
+}
+
+.field-label {
+  font-weight: 500;
+  color: #495057;
+}
+
+.field-value {
+  color: #212529;
+}
+
+.field-status {
+  font-weight: 600;
+}
+
+.angle-comparison-section {
+  margin-top: 1rem;
+}
+
+.angle-row {
+  margin-bottom: 1.5rem;
+}
+
+.angle-row h5 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  color: #495057;
+  font-size: 1rem;
+  text-transform: capitalize;
+}
+
+.angle-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.angle-table thead {
+  background: #e9ecef;
+}
+
+.angle-table th {
+  padding: 0.625rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #495057;
+}
+
+.angle-table td {
+  padding: 0.625rem;
+  border-bottom: 1px solid #dee2e6;
+  font-size: 0.875rem;
+}

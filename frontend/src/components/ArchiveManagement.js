@@ -11,6 +11,7 @@ import { resolveEngineLabel } from "../utils/analysisUtils";
 import { detectReportType, getReportStatusLabel } from "../utils/reportUtils";
 import AnalysisSummaryCard from "./AnalysisSummaryCard";
 import { normaliseFilenameForComparison } from "../utils/fileUtils";
+import ComparisonDetailView from "./ComparisonDetailView";
 
 const deriveLaboratory = (filename = "", detectedType = "") => {
   const name = filename.toLowerCase();
@@ -866,6 +867,8 @@ const ArchiveManagement = ({
                 {archiveComparisonResult.summary ||
                   "Karşılaştırma tamamlandı, detaylar rapor özetinde listelendi."}
               </p>
+
+              <ComparisonDetailView comparisonData={archiveComparisonResult} />
             </div>
           )}
         </div>
