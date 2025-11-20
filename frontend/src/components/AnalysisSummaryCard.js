@@ -3,7 +3,6 @@ import {
   formatAnalysisTimestamp,
   LANGUAGE_LABELS,
   SUMMARY_SECTION_LABELS,
-  STRUCTURED_SECTION_LABELS,
 } from "../utils/analysisUtils";
 import DetailedAnalysisDisplay from "./DetailedAnalysisDisplay";
 
@@ -27,21 +26,6 @@ const resolveLocalizedLabels = (languageKey, content) => {
     technical: (provided.technical || fallback.technical || "").trim(),
     failures: (provided.failures || fallback.failures || "").trim(),
   };
-};
-
-const getStructuredLabel = (sectionKey, languageKey) => {
-  const languageLabels = STRUCTURED_SECTION_LABELS[languageKey];
-  if (languageLabels && languageLabels[sectionKey]) {
-    return languageLabels[sectionKey];
-  }
-
-  const fallback =
-    STRUCTURED_SECTION_LABELS.tr?.[sectionKey] ||
-    STRUCTURED_SECTION_LABELS.en?.[sectionKey] ||
-    STRUCTURED_SECTION_LABELS.de?.[sectionKey] ||
-    sectionKey;
-
-  return fallback;
 };
 
 const resolveLanguageKey = (key) => {
@@ -87,42 +71,6 @@ const resolveLocalizedText = (rawValue, languageKey) => {
   }
 
   return String(rawValue).trim();
-};
-
-const normaliseStructuredValue = (rawValue, languageKey) => {
-  if (!rawValue) {
-    return "";
-  }
-
-  return resolveLocalizedText(rawValue, languageKey);
-};
-
-const hasStructuredContent = (rawValue) => {
-  if (!rawValue) {
-    return false;
-  }
-
-  if (typeof rawValue === "string") {
-    return rawValue.trim().length > 0;
-  }
-
-  if (Array.isArray(rawValue)) {
-    return rawValue.some((item) => String(item || "").trim().length > 0);
-  }
-
-  if (typeof rawValue === "object") {
-    return Object.values(rawValue).some((value) => {
-      if (typeof value === "string") {
-        return value.trim().length > 0;
-      }
-      if (Array.isArray(value)) {
-        return value.some((item) => String(item || "").trim().length > 0);
-      }
-      return false;
-    });
-  }
-
-  return false;
 };
 
 const parseConditionEntries = (text) => {
@@ -303,102 +251,6 @@ const AnalysisSummaryCard = ({
                             );
                           })}
                         </div>
-                        <details className="analysis-technical-block">
-                          <summary>{baseLabels.technical}</summary>
-                          <div className="analysis-technical-content">
-                            {item.condition_evaluation && (
-                              <p className="analysis-technical-note">{item.condition_evaluation}</p>
-                            )}
-                            {item.improvement_overview && (
-                              <p className="analysis-technical-note">{item.improvement_overview}</p>
-                            )}
-                            {item.structured_sections && (
-                              <div className="analysis-structured-sections">
-                                {Object.entries(item.structured_sections)
-                                  .filter(([, value]) => hasStructuredContent(value))
-                                  .map(([sectionKey, value]) => (
-                                    <div
-                                      className="analysis-structured-section"
-                                      key={`${analysis.id}-${item.filename}-${sectionKey}`}
-                                    >
-                                      <h5 className="analysis-structured-section-title">
-                                        {getStructuredLabel(sectionKey, "tr")}
-                                      </h5>
-                                      <div className="analysis-structured-language-grid">
-                                        {LANGUAGE_ORDER.map((languageKey) => {
-                                          const sectionLabel = getStructuredLabel(
-                                            sectionKey,
-                                            languageKey
-                                          );
-                                          const sectionContent = normaliseStructuredValue(
-                                            value,
-                                            languageKey
-                                          );
-
-                                          return (
-                                            <div
-                                              className="analysis-structured-language-card"
-                                              key={`${analysis.id}-${item.filename}-${sectionKey}-${languageKey}`}
-                                            >
-                                              <div className="analysis-structured-language-header">
-                                                <span className="analysis-language-chip">
-                                                  {LANGUAGE_LABELS[languageKey] ||
-                                                    languageKey.toUpperCase()}
-                                                </span>
-                                                <span className="analysis-structured-language-title">
-                                                  {sectionLabel}
-                                                </span>
-                                              </div>
-                                              {sectionContent ? (
-                                                <p>{sectionContent}</p>
-                                              ) : (
-                                                <p className="muted-text">
-                                                  {
-                                                    PLACEHOLDER_TEXT[languageKey] ||
-                                                    PLACEHOLDER_TEXT.tr
-                                                  }
-                                                </p>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  ))}
-                              </div>
-                            )}
-                            {item.highlights?.length > 0 && (
-                              <div className="analysis-technical-section">
-                                <h5>{baseLabels.highlights}</h5>
-                                <ul className="analysis-highlights">
-                                  {item.highlights.map((highlight, highlightIndex) => (
-                                    <li
-                                      key={`${analysis.id}-${item.filename}-highlight-${highlightIndex}`}
-                                    >
-                                      {highlight}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {item.failures?.length > 0 && (
-                              <div className="analysis-technical-section">
-                                <h5>{baseLabels.failures}</h5>
-                                <ul className="analysis-failure-list">
-                                  {item.failures.map((failure) => (
-                                    <li key={`${analysis.id}-${item.filename}-${failure.test_name}`}>
-                                      <strong>{failure.test_name}:</strong>{" "}
-                                      {failure.failure_reason || "Açıklama yok."}
-                                      {failure.suggested_fix && (
-                                        <span> — Öneri: {failure.suggested_fix}</span>
-                                      )}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        </details>
                         {item.structured_page_analysis && (
                           <DetailedAnalysisDisplay
                             analysis={item.structured_page_analysis}
