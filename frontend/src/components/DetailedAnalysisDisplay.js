@@ -184,10 +184,23 @@ const DetailedAnalysisDisplay = ({ analysis, filename }) => {
                   <span className="info-value">{page_2_conditions.test_product}</span>
                 </div>
               )}
+              {page_2_conditions.test_product_name &&
+                page_2_conditions.test_product_name !== "N/A" && (
+                  <div className="info-item">
+                    <span className="info-label">✓ Bezeichnung (Seri Adı):</span>
+                    <span className="info-value">{page_2_conditions.test_product_name}</span>
+                  </div>
+                )}
               {page_2_conditions.test_result_summary && page_2_conditions.test_result_summary !== "N/A" && (
                 <div className="info-item">
                   <span className="info-label">✓ Test Sonuç Özeti (Prüfergebnis):</span>
                   <span className="info-value">{page_2_conditions.test_result_summary}</span>
+                </div>
+              )}
+              {page_2_conditions.test_result_details?.sharp_edges && (
+                <div className="info-item">
+                  <span className="info-label">✓ Kriterium “scharfe Kanten”:</span>
+                  <span className="info-value">{page_2_conditions.test_result_details.sharp_edges}</span>
                 </div>
               )}
             </div>

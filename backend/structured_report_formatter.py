@@ -395,6 +395,17 @@ def format_kielt_report_analysis(
     report_id = extract_report_id(filename)
     report_id_breakdown = parse_report_id_components(report_id)
 
+    structured_data = pdf_data.get("structured_data", {}) if isinstance(pdf_data, dict) else {}
+    page_2_metadata = structured_data.get("page_2_metadata") if isinstance(structured_data, dict) else {}
+
+    pruefling_details: Dict[str, Any] = {}
+    if isinstance(page_2_metadata, dict):
+        maybe_pruefling = page_2_metadata.get("pruefling")
+        if isinstance(maybe_pruefling, dict):
+            pruefling_details = maybe_pruefling
+
+    test_product_name = _normalize_text(pruefling_details.get("bezeichnung")) if pruefling_details else ""
+
     # Page 1: Cover Page
     page_1_cover = {
         "report_title": "Prüfbericht (Test Report)",
@@ -419,8 +430,27 @@ def format_kielt_report_analysis(
             "control": extract_field(pdf_data, "Justierung/Kontrolle", "N/A")
         },
         "test_product": extract_field(pdf_data, "Prüfling", "N/A"),
-        "test_result_summary": extract_field(pdf_data, "Prüfergebnis", "N/A")
+        "test_product_name": test_product_name or "N/A",
+        "test_result_summary": extract_field(pdf_data, "Prüfergebnis", "N/A"),
+        "test_result_details": {}
     }
+
+    if isinstance(page_2_metadata, dict):
+        pruefergebnis_details = page_2_metadata.get("pruefergebnis")
+        criteria_details = {}
+        if isinstance(pruefergebnis_details, dict):
+            raw_criteria = pruefergebnis_details.get("criteria")
+            if isinstance(raw_criteria, dict):
+                criteria_details = raw_criteria
+            elif "scharfe_kanten" in pruefergebnis_details:
+                criteria_details = {"scharfe_kanten": pruefergebnis_details.get("scharfe_kanten")}
+
+        sharp_edge_value = _normalize_text(criteria_details.get("scharfe_kanten")) if criteria_details else ""
+        if sharp_edge_value:
+            page_2_conditions["test_result_details"]["sharp_edges"] = sharp_edge_value
+
+    if not page_2_conditions["test_product_name"] and page_2_conditions["test_product"]:
+        page_2_conditions["test_product_name"] = page_2_conditions["test_product"]
 
     # Page 3: Measurement Values (CRITICAL!)
     page_3_measurements = format_measurement_values(measurement_params)
