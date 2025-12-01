@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Dict
+import sys
 
 import pytest
 
@@ -48,6 +49,7 @@ Ergebnis: bestanden
 Freigabe: Serienfertigung frei
 Prüfer: Dipl.-Ing. Schmidt
 Datum: 22.03.2024
+Kriterium „scharfe Kanten“: i.O.
 Dummyprüfung:
     Dummy Checks: P10 + 50M Hybrid III geprüft
     Rückhaltung: keine Auffälligkeiten
@@ -98,6 +100,7 @@ def test_parse_page2_metadata(sample_page2_text: str):
         "freigabe": "Serienfertigung frei",
         "pruefer": "Dipl.-Ing. Schmidt",
         "datum": "22.03.2024",
+        "criteria": {"scharfe_kanten": "i.O."},
         "dummypruefung": {
             "dummy_checks": "P10 + 50M Hybrid III geprüft",
             "rueckhaltung": "keine Auffälligkeiten",

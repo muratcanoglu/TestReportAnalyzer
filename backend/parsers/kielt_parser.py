@@ -93,6 +93,10 @@ _PRUEFERGEBNIS_FIELDS: Mapping[str, Iterable[str]] = {
     "datum": ["Datum"],
 }
 
+_PRUEFERGEBNIS_CRITERIA_PATTERNS: Mapping[str, str] = {
+    "scharfe_kanten": r"Kriterium\s+[„\"“]scharfe\s+Kanten[”\"“]\s*[:=\-]?\s*(?P<value>.+?)(?:\r?\n|$)",
+}
+
 _ANGLE_POSITIONS: List[str] = [
     "hinten_links",
     "hinten_rechts",
@@ -257,7 +261,9 @@ def extract_pruefergebnis(text: str) -> Dict[str, object]:
     block = _extract_block(text, "Prüfergebnis")
     result: Dict[str, object] = {key: "" for key in _PRUEFERGEBNIS_FIELDS}
     dummy_details = {key: "" for key in _DUMMY_REGEX_PATTERNS}
+    criteria_details = {key: "" for key in _PRUEFERGEBNIS_CRITERIA_PATTERNS}
     result["dummypruefung"] = dummy_details
+    result["criteria"] = criteria_details
 
     if not block:
         return result
@@ -268,6 +274,9 @@ def extract_pruefergebnis(text: str) -> Dict[str, object]:
     dummy_text = _extract_nested_section(block, "Dummyprüfung") or block
     for dummy_key, pattern in _DUMMY_REGEX_PATTERNS.items():
         dummy_details[dummy_key] = _extract_dummy_field(dummy_text, pattern)
+
+    for criteria_key, pattern in _PRUEFERGEBNIS_CRITERIA_PATTERNS.items():
+        criteria_details[criteria_key] = _extract_dummy_field(block, pattern)
 
     return result
 
