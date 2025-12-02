@@ -120,6 +120,257 @@ def _derive_alignment_key(total_tests: int, passed_tests: int, failed_tests: int
     return "unknown"
 
 
+FAIL_KEYWORDS = {
+    "fail",
+    "failed",
+    "fails",
+    "failure",
+    "başarısız",
+    "geçmeyen",
+    "hatalı",
+    "fehler",
+    "fehlgeschlagen",
+}
+
+PASS_KEYWORDS = {"pass", "passed", "başarılı", "geçti", "bestanden"}
+
+R80_KEYWORDS = {"r80", "r-80", "darbe", "impact"}
+R10_KEYWORDS = {"r10", "r-10", "emc"}
+
+
+def _tokenize_query(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9çğıöşüäöüß]+", text.lower())
+
+
+def _contains_keyword(text: str, tokens: list[str], keywords: set[str]) -> bool:
+    lowered = text.lower()
+    for keyword in keywords:
+        if keyword in lowered:
+            return True
+
+    for token in tokens:
+        if token in keywords:
+            return True
+        if difflib.get_close_matches(token, keywords, n=1, cutoff=0.8):
+            return True
+    return False
+
+
+def _detect_language(text: str) -> str:
+    lowered = text.lower()
+    if any(char in lowered for char in "çğıöşü"):
+        return "tr"
+    if any(char in lowered for char in "äöüß"):
+        return "de"
+    if any(word in lowered for word in ["the", "list", "show", "failed"]):
+        return "en"
+    return "tr"
+
+
+def _parse_natural_query(raw_query: str) -> dict:
+    text = raw_query.strip()
+    tokens = _tokenize_query(text)
+
+    year_match = re.search(r"(19|20)\d{2}", text)
+    year = int(year_match.group()) if year_match else None
+
+    status = None
+    if _contains_keyword(text, tokens, FAIL_KEYWORDS):
+        status = "fail"
+    elif _contains_keyword(text, tokens, PASS_KEYWORDS):
+        status = "pass"
+
+    test_type = None
+    if _contains_keyword(text, tokens, R80_KEYWORDS):
+        test_type = "r80"
+    elif _contains_keyword(text, tokens, R10_KEYWORDS):
+        test_type = "r10"
+
+    keywords = [token for token in tokens if len(token) > 3]
+
+    return {
+        "year": year,
+        "status": status,
+        "test_type": test_type,
+        "keywords": keywords,
+        "language": _detect_language(text),
+    }
+
+
+QUERY_MESSAGES = {
+    "tr": {
+        "summary": "{report_count} rapor ve {test_count} test bulundu.",
+        "no_results": "Sorguyla eşleşen rapor veya test bulunamadı.",
+        "filters": "Uygulanan filtreler: {filters}",
+    },
+    "en": {
+        "summary": "Found {report_count} report(s) and {test_count} matching test(s).",
+        "no_results": "No reports or tests matched the query.",
+        "filters": "Applied filters: {filters}",
+    },
+    "de": {
+        "summary": "{report_count} Bericht(e) und {test_count} Test(s) gefunden.",
+        "no_results": "Keine Berichte oder Tests entsprechen der Anfrage.",
+        "filters": "Aktive Filter: {filters}",
+    },
+}
+
+
+def _format_filters_for_response(filters: dict) -> str:
+    human_parts: list[str] = []
+    if filters.get("year"):
+        human_parts.append(f"Yıl={filters['year']}")
+    if filters.get("test_type"):
+        human_parts.append(filters["test_type"].upper())
+    if filters.get("status"):
+        human_parts.append(filters["status"].upper())
+    if not human_parts:
+        return "Filtre uygulanmadı"
+    return ", ".join(human_parts)
+
+
+def _coerce_year(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).year
+    except (ValueError, TypeError):
+        pass
+    try:
+        if len(value) >= 4 and value[:4].isdigit():
+            return int(value[:4])
+    except Exception:
+        return None
+    return None
+
+
+@reports_bp.route("/query", methods=["POST"])
+def run_natural_language_query():
+    payload = request.get_json(silent=True) or {}
+    raw_query = (payload.get("query") or "").strip()
+    if not raw_query:
+        return _json_error("Sorgu metni gerekli.", 400)
+
+    engine_key, engine_label = _normalise_engine(payload.get("engine"))
+    parsed = _parse_natural_query(raw_query)
+
+    reports = database.get_all_reports()
+    matches = []
+    matched_tests_total = 0
+
+    for report in reports:
+        report_year = _coerce_year(str(report.get("upload_date") or ""))
+        if parsed["year"] and parsed["year"] != report_year:
+            continue
+
+        report_type_key = (report.get("test_type") or "unknown").strip().lower()
+        report_type_label = _resolve_report_type_label(report_type_key)
+        if parsed["test_type"] and parsed["test_type"] not in report_type_key:
+            if parsed["test_type"] not in report_type_label.lower():
+                continue
+
+        tests = database.get_test_results(report["id"])
+        matched_tests = []
+
+        for test in tests:
+            status = (test.get("status") or "").strip().lower()
+            if parsed["status"] and status != parsed["status"]:
+                continue
+
+            searchable = " ".join(
+                [
+                    test.get("test_name", ""),
+                    test.get("error_message", ""),
+                    test.get("failure_reason", ""),
+                ]
+            ).lower()
+
+            if parsed["keywords"] and not any(
+                keyword in searchable for keyword in parsed["keywords"]
+            ):
+                continue
+
+            matched_tests.append(
+                {
+                    "id": test.get("id"),
+                    "test_name": test.get("test_name"),
+                    "status": test.get("status"),
+                    "error_message": test.get("error_message"),
+                    "failure_reason": test.get("failure_reason"),
+                    "suggested_fix": test.get("suggested_fix"),
+                }
+            )
+
+        if parsed["status"] and not matched_tests:
+            continue
+
+        if parsed["keywords"] and not matched_tests:
+            continue
+
+        matched_tests_total += len(matched_tests) if matched_tests else len(tests)
+
+        matches.append(
+            {
+                "report_id": report.get("id"),
+                "filename": report.get("filename"),
+                "upload_date": report.get("upload_date"),
+                "test_type": report_type_key,
+                "test_type_label": report_type_label,
+                "total_tests": report.get("total_tests", 0),
+                "passed_tests": report.get("passed_tests", 0),
+                "failed_tests": report.get("failed_tests", 0),
+                "matched_tests": matched_tests if matched_tests else tests,
+            }
+        )
+
+    language = parsed.get("language") or "tr"
+    messages = QUERY_MESSAGES.get(language, QUERY_MESSAGES["tr"])
+    filter_summary = _format_filters_for_response(parsed)
+
+    if not matches:
+        return jsonify(
+            {
+                "ok": True,
+                "query": raw_query,
+                "language": language,
+                "engine": engine_label,
+                "engine_key": engine_key,
+                "filters": parsed,
+                "overview": {
+                    "matched_reports": 0,
+                    "matched_tests": 0,
+                    "total_reports": len(reports),
+                },
+                "matches": [],
+                "message": messages["no_results"],
+                "filter_summary": filter_summary,
+            }
+        )
+
+    summary_message = messages["summary"].format(
+        report_count=len(matches), test_count=matched_tests_total
+    )
+
+    return jsonify(
+        {
+            "ok": True,
+            "query": raw_query,
+            "language": language,
+            "engine": engine_label,
+            "engine_key": engine_key,
+            "filters": parsed,
+            "overview": {
+                "matched_reports": len(matches),
+                "matched_tests": matched_tests_total,
+                "total_reports": len(reports),
+            },
+            "matches": matches,
+            "message": summary_message,
+            "filter_summary": messages["filters"].format(filters=filter_summary),
+        }
+    )
+
+
 SUMMARY_LABELS = {
     "tr": {
         "summary": "Genel Özet",

@@ -1547,6 +1547,61 @@ a:hover {
   background-color: rgba(148, 163, 184, 0.05);
 }
 
+.match-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.match-card {
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background-color: rgba(148, 163, 184, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.match-meta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.match-tests {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.match-test-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.status-pill-success {
+  background-color: rgba(22, 163, 74, 0.15);
+  color: var(--success-color);
+}
+
+.status-pill-danger {
+  background-color: rgba(220, 38, 38, 0.15);
+  color: var(--danger-color);
+}
+
 .schema-type {
   display: inline-block;
   background-color: var(--primary-color);
