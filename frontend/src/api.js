@@ -177,3 +177,8 @@ export const resetAllData = async () => {
 };
 
 export const getReportDownloadUrl = (id) => `${API_BASE}/reports/${id}/download`;
+
+export const runNaturalLanguageQuery = async (query, engine) => {
+  const response = await client.post("/query", { query, engine });
+  return response.data;
+};
