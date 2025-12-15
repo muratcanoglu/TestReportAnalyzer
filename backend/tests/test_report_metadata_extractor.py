@@ -23,6 +23,18 @@ def test_derive_report_metadata_prefers_structured_bezeichnung():
     assert result["vehicle_platform"] == "Test Platform X"
 
 
+def test_derive_report_metadata_strips_versuchsbed_from_lab_name():
+    page_texts = [
+        "Kapak",
+        "Prüfling sayfası",
+        "Dummy – Belastung:\nBearbeiter: KIELT Lab Versuchsbed. nach: UN-R80",
+    ]
+
+    result = derive_report_metadata({}, page_texts=page_texts)
+
+    assert result["lab_name"] == "KIELT Lab"
+
+
 def test_derive_report_metadata_falls_back_to_page_2_vehicle():
     structured = {
         "page_2_metadata": {
