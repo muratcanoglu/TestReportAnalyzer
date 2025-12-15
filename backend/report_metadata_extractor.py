@@ -55,6 +55,22 @@ def _extract_label_from_text(text: str, labels: Iterable[str]) -> str:
     return ""
 
 
+def _strip_at_label(value: str, stop_labels: Iterable[str]) -> str:
+    """Remove trailing content that starts with any of the provided labels."""
+
+    if not value:
+        return value
+
+    for label in stop_labels:
+        pattern = re.compile(rf"(?i)\b{re.escape(label)}\b\s*[:=\-]?")
+        match = pattern.search(value)
+        if match:
+            value = value[: match.start()]
+            break
+
+    return _normalize_text(value)
+
+
 def _safe_page_texts(page_texts: Optional[Sequence[str]]) -> list[str]:
     return [text or "" for text in page_texts] if page_texts else []
 
@@ -128,6 +144,7 @@ def derive_report_metadata(
     lab_name = ""
     if len(pages) >= 3:
         lab_name = _extract_label_from_text(pages[2], labels=("Bearbeiter",))
+        lab_name = _strip_at_label(lab_name, stop_labels=("Versuchsbed. nach",))
 
     vehicle_platform = ""
     if len(pages) >= 4:
