@@ -115,8 +115,8 @@ const HomeSection = ({
         <div className="supported-types">
           <h3>Desteklenen PDF Türleri</h3>
           <ul>
-            <li>ECE R80 Darbe Testi Raporu</li>
-            <li>ECE R10 EMC Test Raporu</li>
+            <li>ECE R80 Test Raporu</li>
+            <li>ECE R10 Test Raporu</li>
           </ul>
         </div>
       </div>

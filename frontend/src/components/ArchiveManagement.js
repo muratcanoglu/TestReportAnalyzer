@@ -547,11 +547,11 @@ const ArchiveManagement = ({
           </p>
           <div className="archive-summary-grid">
             <div className="summary-item">
-              <span className="summary-label">ECE R10 EMC Testi Sayısı</span>
+              <span className="summary-label">ECE R10 Test Sayısı</span>
               <span className="summary-value">{archiveSummary.r10}</span>
             </div>
             <div className="summary-item">
-              <span className="summary-label">ECE R80 Darbe Testi Sayısı</span>
+              <span className="summary-label">ECE R80 Test Sayısı</span>
               <span className="summary-value">{archiveSummary.r80}</span>
             </div>
             <div className="summary-item">

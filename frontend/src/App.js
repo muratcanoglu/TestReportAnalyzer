@@ -15,8 +15,8 @@ const NAV_ITEMS = [
   { path: "/", label: "Ana Sayfa", exact: true },
   { path: "/archive", label: "Arşiv Yönetimi" },
   { path: "/query", label: "Doğal Dil Sorgusu" },
-  { path: "/r80", label: "R80 Darbe Testleri" },
-  { path: "/r10", label: "R10 EMC Testleri" },
+  { path: "/r80", label: "R80 Testleri" },
+  { path: "/r10", label: "R10 Testleri" },
   { path: "/reports", label: "Raporlar" },
   { path: "/settings", label: "Ayarlar" },
 ];
@@ -260,7 +260,7 @@ const App = () => {
               path="/r80"
               element={
                 <TestReportsBoard
-                  title="R80 Darbe Testleri"
+                  title="R80 Testleri"
                   reports={reportGroups.r80}
                   analysisEngine={analysisEngine}
                   onAnalysisComplete={handleAnalysisComplete}
@@ -271,7 +271,7 @@ const App = () => {
               path="/r10"
               element={
                 <TestReportsBoard
-                  title="R10 EMC Testleri"
+                  title="R10 Testleri"
                   reports={reportGroups.r10}
                   analysisEngine={analysisEngine}
                   onAnalysisComplete={handleAnalysisComplete}
