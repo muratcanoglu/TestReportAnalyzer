@@ -13,7 +13,11 @@ CREATE TABLE IF NOT EXISTS reports (
     improvement_suggestions TEXT,
     analysis_language TEXT DEFAULT 'tr',
     structured_data TEXT,
-    table_count INTEGER DEFAULT 0
+    table_count INTEGER DEFAULT 0,
+    test_standard TEXT,
+    seat_model TEXT,
+    lab_name TEXT,
+    vehicle_platform TEXT
 );
 
 CREATE TABLE IF NOT EXISTS test_results (

@@ -19,6 +19,7 @@ def test_derive_report_metadata_prefers_structured_bezeichnung():
     result = derive_report_metadata(structured, page_texts=page_texts)
 
     assert result["seat_model"] == "Seri Koltuk A1"
+    assert result["test_standard"] == ""
     assert result["lab_name"] == "KIELT Lab"
     assert result["vehicle_platform"] == "Test Platform X"
 
@@ -33,6 +34,29 @@ def test_derive_report_metadata_strips_versuchsbed_from_lab_name():
     result = derive_report_metadata({}, page_texts=page_texts)
 
     assert result["lab_name"] == "KIELT Lab"
+
+
+def test_derive_report_metadata_extracts_test_standard_from_structured_data():
+    structured = {
+        "page_2_metadata": {
+            "versuchsbedingungen": "ECE-R 80, M3/M2",
+        }
+    }
+
+    result = derive_report_metadata(structured)
+
+    assert result["test_standard"] == "ECE-R 80, M3/M2"
+
+
+def test_derive_report_metadata_extracts_test_standard_from_page_texts():
+    page_texts = [
+        "Kapak",
+        "Versuchsbedingungen : ECE-R 10 Testi\nDiğer satır",
+    ]
+
+    result = derive_report_metadata({}, page_texts=page_texts)
+
+    assert result["test_standard"] == "ECE-R 10 Testi"
 
 
 def test_derive_report_metadata_falls_back_to_page_2_vehicle():
