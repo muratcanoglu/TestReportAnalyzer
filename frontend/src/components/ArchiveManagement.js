@@ -542,7 +542,8 @@ const ArchiveManagement = ({
   const hasFilters = Object.values(filters).some(Boolean);
 
   return (
-    <div className="archive-section">
+    <>
+      <div className="archive-section">
       <div className="two-column-grid">
         <div className="card archive-summary-card">
           <h2>Arşiv Özeti</h2>
@@ -901,7 +902,7 @@ const ArchiveManagement = ({
         }
         collapsed={isArchiveCollapsed}
       />
-    </div>
+    </>
   );
 };
 
