@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Iterable, Mapping, MutableMapping, Optional, Sequence
+from typing import Dict, Iterable, Mapping, Optional, Sequence
 
 import pdfplumber
 from PyPDF2 import PdfReader
@@ -120,6 +120,21 @@ def _extract_vehicle_from_metadata(structured_data: Mapping[str, object]) -> str
     return ""
 
 
+def _extract_test_standard(structured_data: Mapping[str, object], page_texts: Sequence[str]) -> str:
+    page_2_metadata = structured_data.get("page_2_metadata")
+    if isinstance(page_2_metadata, Mapping):
+        for key in ("versuchsbedingungen", "testbedingungen", "test_conditions"):
+            candidate = page_2_metadata.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return _normalize_text(candidate)
+
+    if len(page_texts) >= 2:
+        value = _extract_label_from_text(page_texts[1], labels=("Versuchsbedingungen", "Testbedingungen"))
+        return _normalize_text(value)
+
+    return ""
+
+
 def derive_report_metadata(
     structured_data: object | None,
     *,
@@ -140,6 +155,7 @@ def derive_report_metadata(
         pages = _safe_page_texts(_load_page_texts(pdf_path))
 
     seat_model = _extract_seat_model(data)
+    test_standard = _extract_test_standard(data, pages)
 
     lab_name = ""
     if len(pages) >= 3:
@@ -157,6 +173,7 @@ def derive_report_metadata(
 
     return {
         "seat_model": seat_model,
+        "test_standard": test_standard,
         "lab_name": lab_name,
         "vehicle_platform": vehicle_platform,
     }

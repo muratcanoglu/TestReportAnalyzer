@@ -112,12 +112,18 @@ const ArchiveManagement = ({
     () =>
       reports.map((report) => {
         const detectedType = detectReportType(report);
+        const displayTestType =
+          report.test_standard?.trim() || report.test_type_label || detectedType;
+        const laboratory = report.lab_name?.trim()
+          ? report.lab_name
+          : deriveLaboratory(report.filename ?? "", detectedType);
         const uploadDate = report.upload_date ? new Date(report.upload_date) : null;
         return {
           ...report,
           detectedType,
+          displayTestType,
           uploadDate,
-          laboratory: deriveLaboratory(report.filename ?? "", detectedType),
+          laboratory,
           model: deriveModel(report.filename ?? ""),
           statusLabel: getReportStatusLabel(report),
         };
@@ -676,7 +682,7 @@ const ArchiveManagement = ({
                         ? report.uploadDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                         : "-"}
                     </td>
-                    <td>{report.detectedType}</td>
+                    <td>{report.displayTestType || report.detectedType}</td>
                     <td>{report.laboratory}</td>
                     <td>{report.statusLabel}</td>
                   </tr>
@@ -687,7 +693,7 @@ const ArchiveManagement = ({
         </div>
       )}
 
-      <div className="two-column-grid archive-actions-grid">
+      <div className="archive-actions-grid">
         <div className="card multi-upload-card">
           <h2>Çoklu PDF Test Raporu Yükleme</h2>
           <p className="muted-text">Max. 100 adet pdf test raporu yükleyebilirsiniz!</p>
@@ -766,8 +772,9 @@ const ArchiveManagement = ({
             </div>
           )}
         </div>
+      </div>
 
-        <div className="card report-archive-card">
+      <div className="card report-archive-card">
           <h2>Rapor Arşivi</h2>
           {sortedReports.length === 0 ? (
             <p className="muted-text">Henüz rapor yüklenmedi.</p>
@@ -805,7 +812,7 @@ const ArchiveManagement = ({
                             })
                           : "-"}
                       </td>
-                      <td>{report.detectedType || "Bilinmeyen"}</td>
+                      <td>{report.displayTestType || report.detectedType || "Bilinmeyen"}</td>
                       <td>{report.laboratory}</td>
                       <td>{report.model}</td>
                     </tr>

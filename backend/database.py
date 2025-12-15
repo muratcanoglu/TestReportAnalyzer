@@ -53,6 +53,7 @@ def init_db() -> None:
             ("table_count", "INTEGER DEFAULT 0"),
             ("stored_filename", "TEXT"),
             ("seat_model", "TEXT"),
+            ("test_standard", "TEXT"),
             ("lab_name", "TEXT"),
             ("vehicle_platform", "TEXT"),
         ):
@@ -184,7 +185,7 @@ def get_all_reports(sort_by: str = "date", order: str = "desc") -> List[Dict]:
         cursor = conn.execute(
             f"""
             SELECT id, filename, upload_date, total_tests, passed_tests, failed_tests, test_type,
-                   seat_model, lab_name, vehicle_platform
+                   seat_model, test_standard, lab_name, vehicle_platform
             FROM reports
             ORDER BY {column} {direction}
             """
@@ -215,6 +216,7 @@ def get_report_by_id(report_id: int) -> Optional[Dict]:
                 table_count,
                 stored_filename,
                 seat_model,
+                test_standard,
                 lab_name,
                 vehicle_platform
             FROM reports
@@ -264,6 +266,7 @@ def update_report_comprehensive_analysis(
                 structured_data = ?,
                 table_count = ?,
                 seat_model = COALESCE(?, seat_model),
+                test_standard = COALESCE(?, test_standard),
                 lab_name = COALESCE(?, lab_name),
                 vehicle_platform = COALESCE(?, vehicle_platform)
             WHERE id = ?
@@ -277,6 +280,7 @@ def update_report_comprehensive_analysis(
                 json.dumps(structured_data) if structured_data else None,
                 len(tables) if tables else 0,
                 derived_metadata.get("seat_model"),
+                derived_metadata.get("test_standard"),
                 derived_metadata.get("lab_name"),
                 derived_metadata.get("vehicle_platform"),
                 report_id,
