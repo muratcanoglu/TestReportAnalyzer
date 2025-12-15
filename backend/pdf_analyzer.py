@@ -25,52 +25,52 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pytesseract = None  # type: ignore
 
-    try:  # pragma: no cover - prefer absolute imports under package execution
-        from backend.ai_analyzer import (
+try:  # pragma: no cover - prefer absolute imports under package execution
+    from backend.ai_analyzer import (
+        ai_analyzer,
+        analyze_graphs,
+        analyze_results,
+        analyze_test_conditions,
+        generate_comprehensive_report,
+    )
+    from backend.pdf_format_detector import (
+        detect_pdf_format,
+        extract_measurement_params,
+        parse_kielt_format,
+    )
+    from backend.pdf_section_analyzer import detect_sections
+    from backend.report_metadata_extractor import derive_report_metadata
+except ImportError:  # pragma: no cover - fallback for script execution
+    try:
+        from .ai_analyzer import (  # type: ignore
             ai_analyzer,
             analyze_graphs,
             analyze_results,
             analyze_test_conditions,
             generate_comprehensive_report,
         )
-        from backend.pdf_format_detector import (
+        from .pdf_format_detector import (  # type: ignore
             detect_pdf_format,
             extract_measurement_params,
             parse_kielt_format,
         )
-        from backend.pdf_section_analyzer import detect_sections
-        from backend.report_metadata_extractor import derive_report_metadata
-    except ImportError:  # pragma: no cover - fallback for script execution
-        try:
-            from .ai_analyzer import (  # type: ignore
-                ai_analyzer,
-                analyze_graphs,
-                analyze_results,
-                analyze_test_conditions,
-                generate_comprehensive_report,
-            )
-            from .pdf_format_detector import (  # type: ignore
-                detect_pdf_format,
-                extract_measurement_params,
-                parse_kielt_format,
-            )
-            from .pdf_section_analyzer import detect_sections  # type: ignore
-            from .report_metadata_extractor import derive_report_metadata  # type: ignore
-        except ImportError:  # pragma: no cover - running from repository root
-            from ai_analyzer import (  # type: ignore
-                ai_analyzer,
-                analyze_graphs,
-                analyze_results,
-                analyze_test_conditions,
-                generate_comprehensive_report,
-            )
-            from pdf_format_detector import (  # type: ignore
-                detect_pdf_format,
-                extract_measurement_params,
-                parse_kielt_format,
-            )
-            from pdf_section_analyzer import detect_sections  # type: ignore
-            from report_metadata_extractor import derive_report_metadata  # type: ignore
+        from .pdf_section_analyzer import detect_sections  # type: ignore
+        from .report_metadata_extractor import derive_report_metadata  # type: ignore
+    except ImportError:  # pragma: no cover - running from repository root
+        from ai_analyzer import (  # type: ignore
+            ai_analyzer,
+            analyze_graphs,
+            analyze_results,
+            analyze_test_conditions,
+            generate_comprehensive_report,
+        )
+        from pdf_format_detector import (  # type: ignore
+            detect_pdf_format,
+            extract_measurement_params,
+            parse_kielt_format,
+        )
+        from pdf_section_analyzer import detect_sections  # type: ignore
+        from report_metadata_extractor import derive_report_metadata  # type: ignore
 
 try:  # pragma: no cover - optional parser dependency
     from backend.parsers.kielt_parser import parse_page_2_metadata
