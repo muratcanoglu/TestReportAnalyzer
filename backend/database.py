@@ -7,6 +7,8 @@ from contextlib import closing
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from backend.report_metadata_extractor import derive_report_metadata
+
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "database.db"
 SCHEMA_PATH = BASE_DIR / "models" / "schema.sql"
@@ -47,6 +49,9 @@ def init_db() -> None:
             ("structured_data", "TEXT"),
             ("table_count", "INTEGER DEFAULT 0"),
             ("stored_filename", "TEXT"),
+            ("seat_model", "TEXT"),
+            ("lab_name", "TEXT"),
+            ("vehicle_platform", "TEXT"),
         ):
             try:
                 conn.execute(f"ALTER TABLE reports ADD COLUMN {column} {definition}")
@@ -175,7 +180,8 @@ def get_all_reports(sort_by: str = "date", order: str = "desc") -> List[Dict]:
     with closing(_connect()) as conn:
         cursor = conn.execute(
             f"""
-            SELECT id, filename, upload_date, total_tests, passed_tests, failed_tests, test_type
+            SELECT id, filename, upload_date, total_tests, passed_tests, failed_tests, test_type,
+                   seat_model, lab_name, vehicle_platform
             FROM reports
             ORDER BY {column} {direction}
             """
@@ -204,7 +210,10 @@ def get_report_by_id(report_id: int) -> Optional[Dict]:
                 analysis_language,
                 structured_data,
                 table_count,
-                stored_filename
+                stored_filename,
+                seat_model,
+                lab_name,
+                vehicle_platform
             FROM reports
             WHERE id = ?
             """,
@@ -219,13 +228,27 @@ def update_report_comprehensive_analysis(
     analysis: Dict[str, str],
     structured_data: Optional[Dict[str, object]] = None,
     tables: Optional[List[Dict[str, object]]] = None,
+    metadata: Optional[Dict[str, object]] = None,
 ) -> None:
     """Persist comprehensive analysis columns for a report."""
 
     if not analysis:
         return
 
+    derived_metadata: Dict[str, object] = metadata or {}
+
     with closing(_connect()) as conn:
+        cursor = conn.execute(
+            "SELECT pdf_path FROM reports WHERE id = ?", (report_id,)
+        )
+        pdf_path_row = cursor.fetchone()
+        pdf_path = pdf_path_row[0] if pdf_path_row else None
+
+        if structured_data and not derived_metadata:
+            derived_metadata = derive_report_metadata(
+                structured_data, pdf_path=pdf_path
+            )
+
         conn.execute(
             """
             UPDATE reports
@@ -236,7 +259,10 @@ def update_report_comprehensive_analysis(
                 improvement_suggestions = ?,
                 analysis_language = COALESCE(?, analysis_language),
                 structured_data = ?,
-                table_count = ?
+                table_count = ?,
+                seat_model = COALESCE(?, seat_model),
+                lab_name = COALESCE(?, lab_name),
+                vehicle_platform = COALESCE(?, vehicle_platform)
             WHERE id = ?
             """,
             (
@@ -247,6 +273,9 @@ def update_report_comprehensive_analysis(
                 analysis.get("analysis_language"),
                 json.dumps(structured_data) if structured_data else None,
                 len(tables) if tables else 0,
+                derived_metadata.get("seat_model"),
+                derived_metadata.get("lab_name"),
+                derived_metadata.get("vehicle_platform"),
                 report_id,
             ),
         )

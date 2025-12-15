@@ -25,49 +25,52 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pytesseract = None  # type: ignore
 
-try:  # pragma: no cover - prefer absolute imports under package execution
-    from backend.ai_analyzer import (
-        ai_analyzer,
-        analyze_graphs,
-        analyze_results,
-        analyze_test_conditions,
-        generate_comprehensive_report,
-    )
-    from backend.pdf_format_detector import (
-        detect_pdf_format,
-        extract_measurement_params,
-        parse_kielt_format,
-    )
-    from backend.pdf_section_analyzer import detect_sections
-except ImportError:  # pragma: no cover - fallback for script execution
-    try:
-        from .ai_analyzer import (  # type: ignore
+    try:  # pragma: no cover - prefer absolute imports under package execution
+        from backend.ai_analyzer import (
             ai_analyzer,
             analyze_graphs,
             analyze_results,
             analyze_test_conditions,
             generate_comprehensive_report,
         )
-        from .pdf_format_detector import (  # type: ignore
+        from backend.pdf_format_detector import (
             detect_pdf_format,
             extract_measurement_params,
             parse_kielt_format,
         )
-        from .pdf_section_analyzer import detect_sections  # type: ignore
-    except ImportError:  # pragma: no cover - running from repository root
-        from ai_analyzer import (  # type: ignore
-            ai_analyzer,
-            analyze_graphs,
-            analyze_results,
-            analyze_test_conditions,
-            generate_comprehensive_report,
-        )
-        from pdf_format_detector import (  # type: ignore
-            detect_pdf_format,
-            extract_measurement_params,
-            parse_kielt_format,
-        )
-        from pdf_section_analyzer import detect_sections  # type: ignore
+        from backend.pdf_section_analyzer import detect_sections
+        from backend.report_metadata_extractor import derive_report_metadata
+    except ImportError:  # pragma: no cover - fallback for script execution
+        try:
+            from .ai_analyzer import (  # type: ignore
+                ai_analyzer,
+                analyze_graphs,
+                analyze_results,
+                analyze_test_conditions,
+                generate_comprehensive_report,
+            )
+            from .pdf_format_detector import (  # type: ignore
+                detect_pdf_format,
+                extract_measurement_params,
+                parse_kielt_format,
+            )
+            from .pdf_section_analyzer import detect_sections  # type: ignore
+            from .report_metadata_extractor import derive_report_metadata  # type: ignore
+        except ImportError:  # pragma: no cover - running from repository root
+            from ai_analyzer import (  # type: ignore
+                ai_analyzer,
+                analyze_graphs,
+                analyze_results,
+                analyze_test_conditions,
+                generate_comprehensive_report,
+            )
+            from pdf_format_detector import (  # type: ignore
+                detect_pdf_format,
+                extract_measurement_params,
+                parse_kielt_format,
+            )
+            from pdf_section_analyzer import detect_sections  # type: ignore
+            from report_metadata_extractor import derive_report_metadata  # type: ignore
 
 try:  # pragma: no cover - optional parser dependency
     from backend.parsers.kielt_parser import parse_page_2_metadata
@@ -683,6 +686,7 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
             or ""
         )
         tables = extraction_result.get("tables", [])
+        page_texts = extraction_result.get("page_texts") or []
 
         logger.info("  Text: %s karakter", len(text))
         logger.info("  Tablo: %s adet", len(tables))
@@ -901,6 +905,12 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
                 final_page_2_metadata.get("status", "unknown"),
             )
 
+        report_metadata = derive_report_metadata(
+            sections,
+            page_texts=page_texts,
+            pdf_path=pdf_path_obj,
+        )
+
         return {
             "report_type": report_type_key,
             "report_type_label": report_type_label,
@@ -913,6 +923,7 @@ def analyze_pdf_comprehensive(pdf_path: Path | str) -> Dict[str, object]:
             "comprehensive_analysis": comprehensive_report,
             "structured_data": sections,
             "tables": tables,
+            "report_metadata": report_metadata,
             "measurement_params": measurement_params,
         }
 

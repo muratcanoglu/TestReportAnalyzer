@@ -86,7 +86,8 @@ def upload_report():
             report_id,
             analysis_result['comprehensive_analysis'],
             analysis_result.get('structured_data'),
-            analysis_result.get('tables')
+            analysis_result.get('tables'),
+            analysis_result.get('report_metadata'),
         )
 
         for test in analysis_result['basic_stats']['tests']:
