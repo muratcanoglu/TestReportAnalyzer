@@ -6,8 +6,12 @@ import sys
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parent
-if (backend_root_str := str(BACKEND_ROOT)) not in sys.path:
-    sys.path.insert(0, backend_root_str)
+PROJECT_ROOT = BACKEND_ROOT.parent
+
+for path in (PROJECT_ROOT, BACKEND_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
 import logging
 

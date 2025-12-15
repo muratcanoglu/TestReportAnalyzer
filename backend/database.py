@@ -7,7 +7,10 @@ from contextlib import closing
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from backend.report_metadata_extractor import derive_report_metadata
+try:
+    from backend.report_metadata_extractor import derive_report_metadata
+except ImportError:  # pragma: no cover - allow running as a script/module
+    from .report_metadata_extractor import derive_report_metadata
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "database.db"
