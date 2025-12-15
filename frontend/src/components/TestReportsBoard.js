@@ -206,6 +206,14 @@ const TestReportsBoard = ({ title, reports, analysisEngine, onAnalysisComplete }
     }
   };
 
+  const formatMetadataValue = (value) => {
+    if (value === null || value === undefined) {
+      return "Belirtilmedi";
+    }
+    const text = value.toString().trim();
+    return text ? text : "Belirtilmedi";
+  };
+
   const handleView = () => {
     if (selectedIds.length !== 1) {
       setActionMessage("Bir raporu görüntülemek için tek rapor seçin.");
@@ -258,9 +266,9 @@ const TestReportsBoard = ({ title, reports, analysisEngine, onAnalysisComplete }
                   </td>
                   <td>{new Date(report.upload_date).toLocaleDateString()}</td>
                   <td>{report.filename || "Bilinmiyor"}</td>
-                  <td>{report.detectedType === "R80 Darbe Testi" ? "ECE R80 Koltuk" : "Belirtilmedi"}</td>
-                  <td>{report.detectedType === "R10 EMC Testi" ? "ECE R10 Platformu" : "Genel Platform"}</td>
-                  <td>{report.detectedType === "R10 EMC Testi" ? "EMC Lab" : "Darbe Lab"}</td>
+                  <td>{formatMetadataValue(report.seat_model)}</td>
+                  <td>{formatMetadataValue(report.vehicle_platform)}</td>
+                  <td>{formatMetadataValue(report.lab_name)}</td>
                   <td>
                     <span className={`status-pill ${report.statusLabel.includes("Başarısız") ? "status-fail" : "status-pass"}`}>
                       {report.statusLabel}

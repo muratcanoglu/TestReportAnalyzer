@@ -1479,7 +1479,8 @@ def upload_report():
             report_id,
             analysis_result['comprehensive_analysis'],
             analysis_result.get('structured_data'),
-            analysis_result.get('tables')
+            analysis_result.get('tables'),
+            analysis_result.get('report_metadata'),
         )
 
         # Test sonuçlarını kaydet
@@ -1562,6 +1563,9 @@ def get_report(report_id: int):
                 "total_tests": report.get("total_tests", 0),
                 "passed_tests": report.get("passed_tests", 0),
                 "failed_tests": report.get("failed_tests", 0),
+                "seat_model": report.get("seat_model"),
+                "lab_name": report.get("lab_name"),
+                "vehicle_platform": report.get("vehicle_platform"),
                 "tests": tests,
             },
             "detailed_analysis": detailed_analysis,
@@ -1600,6 +1604,9 @@ def get_detailed_report(report_id: int):
                 "passed": report.get("passed_tests", 0),
                 "failed": report.get("failed_tests", 0),
             },
+            "seat_model": report.get("seat_model"),
+            "lab_name": report.get("lab_name"),
+            "vehicle_platform": report.get("vehicle_platform"),
             "detailed_analysis": detailed_analysis,
             "structured_data": report.get("structured_data"),
             "table_count": report.get("table_count", 0),
