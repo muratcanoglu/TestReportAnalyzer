@@ -22,7 +22,7 @@ const resolveBaseUrl = () => {
 
   const { protocol, hostname, port } = window.location;
   const isDevelopment = process.env.NODE_ENV === "development";
-  const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
+  const isLocalHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(hostname);
 
   // Prefer same-origin in secure contexts to avoid mixed-content blokajları.
   if (protocol === "https:") {
