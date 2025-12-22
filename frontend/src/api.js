@@ -8,21 +8,34 @@ const debugLog = (...args) => {
   }
 };
 
+const buildSameOriginBase = () => {
+  const { protocol, hostname, port } = window.location;
+  const portPart = port ? `:${port}` : "";
+  return `${protocol}//${hostname}${portPart}/api`;
+};
+
 const resolveBaseUrl = () => {
   const envBaseUrl = process.env.REACT_APP_API_BASE_URL?.trim();
   if (envBaseUrl) {
     return envBaseUrl;
   }
 
-  const hostname = window.location.hostname;
+  const { protocol, hostname, port } = window.location;
   const isDevelopment = process.env.NODE_ENV === "development";
   const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
 
-  if (isDevelopment || isLocalHost) {
-    return "http://localhost:5000/api";
+  // Prefer same-origin in secure contexts to avoid mixed-content blokajları.
+  if (protocol === "https:") {
+    return buildSameOriginBase();
   }
 
-  return "/api";
+  // Development sunucusunda backend varsayılan 5000 portunda çalışır.
+  if (isDevelopment && isLocalHost && (port === "3000" || !port)) {
+    return "http://127.0.0.1:5000/api";
+  }
+
+  // Diğer durumlarda (örn. farklı porttaki reverse proxy) aynı origin'e bağlan.
+  return buildSameOriginBase();
 };
 
 const API_BASE = resolveBaseUrl();
