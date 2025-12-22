@@ -34,6 +34,19 @@ gibi betikler "komut bulunamadı" hatası döndürebilir.
 cd C:\TestReportAnalyzer
 ```
 
+> **Hata mı alıyorsunuz?** `PS C:\Users\<adınız>> .\start-frontend.ps1` çıktısı "The term '.\start-frontend.ps1' is not recognized" diyorsa
+> komut satırının hala ev dizininde olduğunu gösterir. Aşağıdaki hızlı kontrolü yapabilirsiniz:
+>
+> ```powershell
+> # Betiğin bulunduğu klasöre geçin (projeyi nereye klonladıysanız onu yazın)
+> Set-Location C:\TestReportAnalyzer
+>
+> # Sonra yeniden deneyin
+> .\start-frontend.ps1
+> ```
+>
+> Kendi klasörünüz farklıysa yolu buna göre uyarlayın (örnek: `Set-Location D:\projeler\TestReportAnalyzer`).
+
 ### 2. (Gerekirse) Execution Policy kısıtlamasını kaldırın
 Bazı Windows kurulumlarında varsayılan Execution Policy ayarı, depo içindeki PowerShell betiklerinin (ör. `setup.ps1`) çalış-
 tırılmasını engelleyerek `running scripts is disabled on this system` hatasına yol açabilir. Komutların yalnızca mevcut oturum
